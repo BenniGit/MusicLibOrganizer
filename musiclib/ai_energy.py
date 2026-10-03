@@ -6,6 +6,7 @@ essentia.upf.edu in den App-Datenordner geladen. Alles läuft lokal.
 from __future__ import annotations
 
 import os
+import time
 import urllib.request
 from pathlib import Path
 
@@ -40,22 +41,37 @@ def models_dir() -> Path:
     return data_dir() / "models"
 
 
+def _download(url: str, dst: Path, label: str, timeout: float = 30) -> None:
+    """Lädt mit Fortschrittsanzeige; bricht ab, wenn 30 s lang nichts ankommt."""
+    tmp = dst.with_suffix(".part")
+    start = time.time()
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as r, tmp.open("wb") as f:
+            total = int(r.headers.get("Content-Length") or 0)
+            done = 0
+            while chunk := r.read(256 * 1024):
+                f.write(chunk)
+                done += len(chunk)
+                speed = done / max(time.time() - start, 0.1) / 1e6
+                pct = f"{done / total:4.0%}" if total else ""
+                print(f"  {label}: {done / 1e6:5.1f} MB {pct}  ({speed:.1f} MB/s)", end="\r", flush=True)
+        print()
+    except OSError as e:
+        tmp.unlink(missing_ok=True)
+        raise AIUnavailable(f"Modell {label} konnte nicht geladen werden ({e}). Ist essentia.upf.edu erreichbar?") from e
+    tmp.replace(dst)
+
+
 def ensure_models(progress=print) -> None:
-    """Lädt fehlende Modelldateien herunter."""
+    """Lädt fehlende Modelldateien herunter (einmalig, ~20 MB)."""
     files = [EMBEDDING_MODEL[0]] + [h[0] for h in HEADS.values()]
-    for rel in files:
+    missing = [rel for rel in files if not (models_dir() / Path(rel).name).exists()]
+    if missing:
+        progress(f"Lade KI-Modelle nach {models_dir()} (einmalig, ~20 MB) …")
+    for rel in missing:
         dst = models_dir() / Path(rel).name
-        if dst.exists() and dst.stat().st_size > 0:
-            continue
         dst.parent.mkdir(parents=True, exist_ok=True)
-        progress(f"Lade KI-Modell {dst.name} …")
-        tmp = dst.with_suffix(".part")
-        try:
-            urllib.request.urlretrieve(f"{BASE}/{rel}", tmp)
-        except OSError as e:
-            tmp.unlink(missing_ok=True)
-            raise AIUnavailable(f"Modell konnte nicht geladen werden ({e}). Ist essentia.upf.edu erreichbar?") from e
-        tmp.replace(dst)
+        _download(f"{BASE}/{rel}", dst, dst.name)
 
 
 def check_available() -> None:
@@ -84,6 +100,13 @@ def _models():
         for name, (rel, output, _) in HEADS.items():
             _MODELS[name] = es.TensorflowPredict2D(graphFilename=str(models_dir() / Path(rel).name), output=output)
     return _MODELS
+
+
+def warmup() -> float:
+    """Lädt die Modelle im aktuellen Prozess und gibt die Dauer in Sekunden zurück."""
+    t = time.time()
+    _models()
+    return time.time() - t
 
 
 def analyze(path: str, duration_s: float | None) -> dict:

@@ -14,6 +14,7 @@ import multiprocessing
 import os
 import re
 import sys
+import time
 from collections import Counter
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
@@ -169,6 +170,22 @@ def confusion(stars: np.ndarray, pred: np.ndarray) -> None:
             print(f"  deine ★{s} ({sum(row):3d})   " + "".join(f"{n:4d} " for n in row))
 
 
+_AI_LOAD_SECONDS = 0.0
+
+
+def _init_ai_worker() -> None:
+    """Lädt das Modell direkt beim Start des Arbeitsprozesses."""
+    global _AI_LOAD_SECONDS
+    from . import ai_energy
+
+    _AI_LOAD_SECONDS = ai_energy.warmup()
+
+
+def _ai_ready() -> float:
+    time.sleep(0.2)  # damit sich die Aufgaben auf alle Prozesse verteilen
+    return _AI_LOAD_SECONDS
+
+
 def _analyze_ai_one(path: str) -> dict:
     from . import ai_energy
 
@@ -197,9 +214,16 @@ def analyze_ai(entries: list[Entry], workers: int, cache_path: Path) -> tuple[di
         else:
             todo.append((i, key))
     if todo:
-        print(f"KI-Analyse von {len(todo)} Tracks ({len(results)} aus dem Cache) mit {workers} Prozessen …")
+        print(f"KI-Analyse von {len(todo)} Tracks ({len(results)} aus dem Cache) mit {workers} Prozessen.")
+        print("Starte KI-Prozesse und lade das Modell (beim allerersten Mal kann das 1–2 Minuten dauern) …")
+        t0 = time.time()
         # "spawn": frische Prozesse, damit TensorFlow nicht in einem geforkten Prozess hängen bleibt
-        with ProcessPoolExecutor(max_workers=workers, mp_context=multiprocessing.get_context("spawn")) as ex:
+        with ProcessPoolExecutor(max_workers=workers, mp_context=multiprocessing.get_context("spawn"),
+                                 initializer=_init_ai_worker) as ex:
+            # Erst warten, bis die Prozesse bereit sind – so sieht man, ob das Laden oder die Analyse dauert
+            loads = [f.result() for f in [ex.submit(_ai_ready) for _ in range(workers)]]
+            print(f"  bereit nach {time.time() - t0:.0f} s (Modell laden: {max(loads):.0f} s je Prozess)")
+            t1 = time.time()
             futures = {ex.submit(_analyze_ai_one, str(entries[i].path)): (i, key) for i, key in todo}
             for n, fut in enumerate(as_completed(futures), 1):
                 i, key = futures[fut]
@@ -208,7 +232,10 @@ def analyze_ai(entries: list[Entry], workers: int, cache_path: Path) -> tuple[di
                 except Exception as e:
                     errors.append(f"KI {entries[i].path.name}: {e}")
                 if n % 5 == 0 or n == len(todo):
-                    print(f"  {n}/{len(todo)}", end="\r", flush=True)
+                    per = (time.time() - t1) / n
+                    rest = per * (len(todo) - n)
+                    print(f"  {n}/{len(todo)}  ({per:.1f} s je Track, noch ca. {rest / 60:.0f} min)  ",
+                          end="\r", flush=True)
                 if n % 50 == 0:  # Zwischenstand sichern
                     _save_json(cache_path, cache)
         print()
