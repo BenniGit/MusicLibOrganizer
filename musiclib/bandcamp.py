@@ -89,6 +89,10 @@ def parse_track_page(page: str, url: str) -> TrackMeta | None:
             image = image[0] if image else ""
         name, mix = split_mix(data.get("name") or "")
         album = data.get("inAlbum") or {}
+        if isinstance(album, list):
+            album = album[0] if album else {}
+        album_artist = _name(album.get("byArtist")) or artist
+        num = re.search(r'"track_num"\s*:\s*(\d+)', page) or re.search(r'&quot;track_num&quot;:(\d+)', page)
         return TrackMeta(
             id=url,
             name=name,
@@ -104,6 +108,10 @@ def parse_track_page(page: str, url: str) -> TrackMeta | None:
             image_url=image,
             source="Bandcamp",
             url=url,
+            album_artist=album_artist,
+            track_number=int(num.group(1)) if num else (data.get("position") if isinstance(data.get("position"), int) else None),
+            track_total=album.get("numTracks") if isinstance(album.get("numTracks"), int) else None,
+            enriched=True,
         )
     return None
 

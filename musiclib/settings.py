@@ -8,17 +8,20 @@ from .models import TrackMeta
 
 # Name -> Vorlage. "/" erzeugt Unterordner.
 TEMPLATE_PRESETS: dict[str, str] = {
-    "Genre (empfohlen)": "{genre}/{artist} - {title} ({mix})",
-    "Genre / Label": "{genre}/{label}/{artist} - {title} ({mix})",
+    "Album-Artist / Release (empfohlen)": "{albumartist}/{album} ({year})/{track} - {artist} - {title} ({mix})",
+    "Genre / Album-Artist / Release": "{genre}/{albumartist}/{album} ({year})/{track} - {artist} - {title} ({mix})",
+    "Label / Release": "{label}/[{catno}] {albumartist} - {album}/{track} - {artist} - {title} ({mix})",
+    "Genre (ein Ordner pro Genre)": "{genre}/{artist} - {title} ({mix})",
     "Import-Monat / Genre": "{added}/{genre}/{artist} - {title} ({mix})",
-    "Label / Release": "{label}/{year} - {album}/{artist} - {title} ({mix})",
     "Flach (alles in einem Ordner)": "{artist} - {title} ({mix})",
 }
-DEFAULT_TEMPLATE = TEMPLATE_PRESETS["Genre (empfohlen)"]
+DEFAULT_TEMPLATE = TEMPLATE_PRESETS["Album-Artist / Release (empfohlen)"]
 
 REQUIRED_FIELD_CHOICES: dict[str, str] = {
     "artist": "Artist",
     "title": "Titel",
+    "albumartist": "Album-Artist",
+    "track": "Tracknummer",
     "genre": "Genre",
     "label": "Label",
     "album": "Release / Album",
@@ -27,7 +30,7 @@ REQUIRED_FIELD_CHOICES: dict[str, str] = {
     "key": "Key",
     "cover": "Cover",
 }
-DEFAULT_REQUIRED = ["artist", "title", "genre", "label", "year"]
+DEFAULT_REQUIRED = ["artist", "title", "albumartist", "track", "album", "genre", "label", "year"]
 
 
 @dataclass
@@ -37,6 +40,7 @@ class AppSettings:
     mix_in_title: bool = True
     embed_cover: bool = True
     move: bool = False
+    clean_tags: bool = True
     required_fields: list[str] = field(default_factory=lambda: list(DEFAULT_REQUIRED))
     label_fallback: str = "Self-Released"
     match_threshold: float = 0.85
@@ -69,6 +73,8 @@ def field_value(meta: TrackMeta, name: str) -> str:
     return {
         "artist": meta.artist,
         "title": meta.name,
+        "albumartist": meta.effective_album_artist,
+        "track": str(meta.track_number or ""),
         "genre": meta.genre,
         "label": meta.label,
         "album": meta.release,

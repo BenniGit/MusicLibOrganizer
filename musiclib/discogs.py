@@ -41,6 +41,12 @@ def parse_duration(s: str) -> int | None:
     return secs * 1000
 
 
+def parse_disc(position: str) -> int | None:
+    """'2-3' oder 'CD2-3' -> 2 (Mehr-Disc-Release); 'A1'/'3' -> None."""
+    m = re.match(r"^(?:CD|DVD)?(\d+)[-.]\d+$", position.strip(), re.I)
+    return int(m.group(1)) if m else None
+
+
 def _artist_names(artists: list[dict]) -> list[str]:
     return [clean_name(a.get("anv") or a["name"]) for a in artists or []]
 
@@ -59,10 +65,12 @@ def tracks_from_release(rel: dict) -> list[TrackMeta]:
     released = rel.get("released") or str(rel.get("year") or "")
     if released.endswith("-00"):
         released = released[:-3]
+    album_artist = ", ".join(release_artists)
+    if album_artist.lower() in ("various", "various artists") or len(release_artists) > 3:
+        album_artist = "Various Artists"
+    tracklist = [t for t in rel.get("tracklist") or [] if t.get("type_", "track") == "track"]
     out = []
-    for t in rel.get("tracklist") or []:
-        if t.get("type_", "track") != "track":
-            continue
+    for number, t in enumerate(tracklist, 1):
         name, mix = split_mix(t.get("title") or "")
         extra = t.get("extraartists") or []
         out.append(TrackMeta(
@@ -81,6 +89,12 @@ def tracks_from_release(rel: dict) -> list[TrackMeta]:
             image_url=images[0]["uri"] if images else "",
             source="Discogs",
             url=rel.get("uri") or f"https://www.discogs.com/release/{rel['id']}",
+            album_artist=album_artist,
+            track_number=number,
+            track_total=len(tracklist),
+            disc_number=parse_disc(t.get("position") or ""),
+            release_id=str(rel["id"]),
+            enriched=True,
         ))
     return out
 

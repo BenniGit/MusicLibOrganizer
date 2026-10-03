@@ -12,17 +12,22 @@ from .tagger import format_key
 from .settings import DEFAULT_TEMPLATE  # noqa: F401  (Re-Export)
 
 UNKNOWN_GENRE = "_Unbekannt"
-PLACEHOLDERS = ("artist", "title", "mix", "genre", "label", "album", "year", "bpm", "key", "added")
+PLACEHOLDERS = ("artist", "albumartist", "title", "mix", "track", "disc", "album", "genre", "label", "catno",
+                "year", "bpm", "key", "added")
 
 _INVALID = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 _EMPTY_BRACKETS = re.compile(r"\s*(\(\s*\)|\[\s*\])")
+_DOUBLE_SEP = re.compile(r"(\s+-\s+)(?:-\s+)+")
+_EDGE_SEP = re.compile(r"^[\s\-–]+|[\s\-–]+$")
 _MAX_COMPONENT = 150
 
 
 def sanitize(component: str) -> str:
     s = _INVALID.sub("_", component)
     s = _EMPTY_BRACKETS.sub("", s)
-    s = re.sub(r"\s+", " ", s).strip(" .")
+    s = re.sub(r"\s+", " ", s)
+    s = _DOUBLE_SEP.sub(" - ", s)  # leere Platzhalter zwischen " - " entfernen
+    s = _EDGE_SEP.sub("", s).strip(" .")
     if len(s) > _MAX_COMPONENT:
         s = s[:_MAX_COMPONENT].rstrip(" .")
     return s or "_"
@@ -52,6 +57,10 @@ def fields_for(item: LibraryItem, key_format: str = "camelot", label_fallback: s
     if bp:
         return {
             "artist": bp.artist,
+            "albumartist": bp.effective_album_artist,
+            "track": f"{bp.track_number:02d}" if bp.track_number else "",
+            "disc": str(bp.disc_number or ""),
+            "catno": bp.catalog_number,
             "title": bp.name,
             "mix": bp.mix,
             "genre": bp.genre or UNKNOWN_GENRE,
@@ -62,14 +71,19 @@ def fields_for(item: LibraryItem, key_format: str = "camelot", label_fallback: s
             "key": format_key(bp, key_format),
             "added": added,
         }
+    old_track = loc.old.get("track", "").split("/")[0].strip()
     return {
         "artist": loc.artist or "Unbekannt",
+        "albumartist": loc.old.get("albumartist") or loc.artist or "Unbekannt",
+        "track": f"{int(old_track):02d}" if old_track.isdigit() else "",
+        "disc": loc.old.get("disc", "").split("/")[0].strip(),
+        "catno": loc.old.get("catno", ""),
         "title": loc.title or loc.path.stem,
         "mix": loc.mix,
         "genre": UNKNOWN_GENRE,
         "label": label_fallback,
         "album": loc.album,
-        "year": "",
+        "year": loc.old.get("date", "")[:4],
         "bpm": "",
         "key": "",
         "added": added,
@@ -80,7 +94,9 @@ def target_path(item: LibraryItem, target_root: Path, template: str, key_format:
                 label_fallback: str = "") -> Path:
     fields = {k: re.sub(r"\s*/\s*", " - ", v) for k, v in fields_for(item, key_format, label_fallback).items()}
     rendered = template.format(**fields)
-    parts = [sanitize(p) for p in rendered.split("/") if p.strip()] or ["_"]
+    raw = rendered.split("/")
+    # Leere Ordnerebenen (z. B. unbekanntes Album) fallen weg, der Dateiname nie
+    parts = [s for s in (sanitize(p) for p in raw[:-1]) if s != "_"] + [sanitize(raw[-1])]
     parts[-1] += ".mp3"
     return target_root.joinpath(*parts)
 

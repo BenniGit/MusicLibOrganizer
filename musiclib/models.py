@@ -20,6 +20,10 @@ class LocalTrack:
     album: str = ""
     isrc: str = ""
     duration_s: float | None = None
+    # Vorhandene Tags der Datei: Feldname -> Wert (für "alten Wert übernehmen")
+    old: dict[str, str] = field(default_factory=dict)
+    # Alle vorhandenen Tags roh: (Schlüssel, Bezeichnung, Wert als Text)
+    raw_tags: list[tuple[str, str, str]] = field(default_factory=list)
 
     @property
     def needs_conversion(self) -> bool:
@@ -54,6 +58,12 @@ class TrackMeta:
     source: str = "Beatport"
     url: str = ""
     edited: bool = False
+    album_artist: str = ""
+    track_number: int | None = None
+    track_total: int | None = None
+    disc_number: int | None = None
+    release_id: str = ""
+    enriched: bool = False  # Release-Details (Tracknummer, Album-Artist) geladen
 
     @property
     def key(self) -> tuple[str, str]:
@@ -66,6 +76,10 @@ class TrackMeta:
     @property
     def artist(self) -> str:
         return ", ".join(self.artists)
+
+    @property
+    def effective_album_artist(self) -> str:
+        return self.album_artist or self.artist
 
     @property
     def display(self) -> str:
@@ -101,6 +115,7 @@ class TrackMeta:
             image_url=image,
             source="Beatport",
             url=f"https://www.beatport.com/track/{d.get('slug') or '-'}/{d['id']}",
+            release_id=str(release.get("id") or ""),
         )
 
 
@@ -135,3 +150,4 @@ class LibraryItem:
     target: Path | None = None
     enabled: bool = True
     message: str = ""
+    keep_tags: set[str] = field(default_factory=set)  # vorhandene Tags, die erhalten bleiben sollen

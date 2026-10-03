@@ -100,6 +100,19 @@ def rank(local: LocalTrack, tracks: list[TrackMeta], match_threshold: float = MA
     return out
 
 
+def enrich(meta: TrackMeta, sources) -> TrackMeta:
+    """Lädt Release-Details (Tracknummer, Album-Artist) über die passende Quelle nach."""
+    if meta.enriched:
+        return meta
+    for src in sources if isinstance(sources, (list, tuple)) else [sources]:
+        if getattr(src, "name", None) == meta.source and hasattr(src, "enrich"):
+            try:
+                return src.enrich(meta)
+            except Exception:
+                return meta
+    return meta
+
+
 def match_item(item: LibraryItem, sources, match_threshold: float = MATCH_THRESHOLD,
                uncertain_threshold: float = UNCERTAIN_THRESHOLD) -> None:
     """Fragt die Quellen der Reihe nach ab, bis ein sicherer Treffer gefunden ist.
@@ -139,3 +152,5 @@ def match_item(item: LibraryItem, sources, match_threshold: float = MATCH_THRESH
     else:
         item.status = MatchStatus.NOT_FOUND
         item.selected = None
+    if item.selected is not None:
+        item.selected = enrich(item.selected, sources)

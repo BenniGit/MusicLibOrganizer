@@ -18,7 +18,7 @@ def test_flac_is_converted_to_320_and_tagged(tmp_path, bp_track):
     item = LibraryItem(read_track(src), selected=bp_track)
     assign_targets([item], tmp_path / "out", "{genre}/{artist} - {title} ({mix})")
 
-    result = apply_item(item, ApplyOptions(move=False), cover_loader=lambda url: COVER)
+    result = apply_item(item, ApplyOptions(move=False, backup_dir=tmp_path / "bak"), cover_loader=lambda meta: COVER)
     assert "konvertiert" in result and "getaggt" in result
     assert src.exists()  # Kopiermodus: Original bleibt
 
@@ -42,7 +42,7 @@ def test_mp3_move_mode_and_musical_key(tmp_path, bp_track):
     src = make_audio(tmp_path / "in" / "x.mp3")
     item = LibraryItem(read_track(src), selected=bp_track)
     assign_targets([item], tmp_path / "out", "{title}")
-    opts = ApplyOptions(move=True, tag=TagOptions(key_format="musical", mix_in_title=False, embed_cover=False))
+    opts = ApplyOptions(move=True, tag=TagOptions(key_format="musical", mix_in_title=False, embed_cover=False), backup_dir=tmp_path / "bak")
     assert apply_item(item, opts) == "verschoben, getaggt"
     assert not src.exists()
     tags = ID3(tmp_path / "out" / "One More Time.mp3")
@@ -59,3 +59,46 @@ def test_wav_move_mode_deletes_original_and_unmatched_keeps_tags(tmp_path):
     assert apply_item(item, ApplyOptions(move=True)) == "konvertiert, Original gelöscht"
     assert not src.exists()
     assert MP3(tmp_path / "out" / "_Unbekannt" / "A - Song.mp3").info.bitrate // 1000 == 320
+
+
+@needs_ffmpeg
+def test_clean_removes_old_tags_keeps_selected_and_backs_up(tmp_path, bp_track):
+    import json
+
+    from mutagen.id3 import COMM, ID3 as _ID3, TCOM
+
+    src = make_audio(tmp_path / "in" / "x.mp3", artist="Old Artist", title="Old Title")
+    t = _ID3(src)
+    t.add(COMM(encoding=3, lang="eng", desc="", text=["mein Kommentar"]))
+    t.add(TCOM(encoding=3, text=["Komponist"]))
+    t.save(src)
+
+    bp_track.album_artist, bp_track.track_number, bp_track.track_total = "Daft Punk", 2, 3
+    local = read_track(src)
+    assert ("COMM::eng", "Kommentar", "mein Kommentar") in local.raw_tags
+    assert local.old["artist"] == "Old Artist"
+
+    item = LibraryItem(local, selected=bp_track, keep_tags={"TCOM"})
+    assign_targets([item], tmp_path / "out", "{title}")
+    apply_item(item, ApplyOptions(backup_dir=tmp_path / "bak"))
+
+    tags = ID3(tmp_path / "out" / "One More Time.mp3")
+    assert "COMM::eng" not in tags                      # alter Kommentar entfernt
+    assert str(tags["TCOM"]) == "Komponist"             # ausdrücklich behalten
+    assert "TSSE" not in tags                           # Encoder-Tag von ffmpeg entfernt
+    assert str(tags["TPE2"]) == "Daft Punk"
+    assert str(tags["TRCK"]) == "2/3"
+    record = json.loads((next((tmp_path / "bak").glob("*.jsonl"))).read_text().splitlines()[0])
+    assert record["source"] == str(src)
+    assert {"key": "COMM::eng", "label": "Kommentar", "value": "mein Kommentar"} in record["tags"]
+
+
+@needs_ffmpeg
+def test_flac_tags_can_be_kept(tmp_path, bp_track):
+    src = make_audio(tmp_path / "x.flac", artist="A", title="B", composer="Someone")
+    item = LibraryItem(read_track(src), selected=bp_track, keep_tags={"composer"})
+    assign_targets([item], tmp_path / "out", "{title}")
+    apply_item(item, ApplyOptions(backup_dir=tmp_path / "bak"))
+    tags = ID3(tmp_path / "out" / "One More Time.mp3")
+    assert str(tags["TXXX:COMPOSER"]) == "Someone"
+    assert "TPE1" in tags and str(tags["TPE1"]) == "Daft Punk"

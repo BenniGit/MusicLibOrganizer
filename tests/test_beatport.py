@@ -5,6 +5,8 @@ import pytest
 from musiclib.beatport import BeatportClient
 from musiclib.models import TrackMeta
 
+BeatportTrack = TrackMeta
+
 API_TRACK = {
     "id": 1, "name": "One More Time", "mix_name": "12 Mix", "artists": [{"name": "Daft Punk"}],
     "remixers": [], "bpm": 123, "isrc": "GBDUW0000051", "catalog_number": "X",
@@ -53,6 +55,16 @@ class FakeSession:
             return Resp(data={"tracks": [API_TRACK]})
         if url.endswith("/catalog/tracks/"):
             return Resp(data={"results": [API_TRACK]})
+        if url.endswith("/catalog/releases/77/"):
+            # Das "tracks"-Feld ist bei Beatport umgekehrt sortiert und darf nicht verwendet werden
+            return Resp(data={"artists": [{"name": "Daft Punk"}], "track_count": 3, "catalog_number": "CAT",
+                              "tracks": [f"https://api.beatport.com/v4/catalog/tracks/{i}/" for i in (9, 1, 5)]})
+        if url.endswith("/catalog/releases/77/tracks/"):
+            return Resp(data={"results": [{"id": 5}, {"id": 1}, {"id": 9}], "next": None})
+        if url.endswith("/catalog/releases/78/tracks/"):
+            return Resp(data={"results": [], "next": None})
+        if url.endswith("/catalog/releases/78/"):
+            return Resp(data={"artists": [{"name": n} for n in "ABCDE"], "track_count": 20, "tracks": []})
         raise AssertionError(url)
 
 
@@ -77,6 +89,15 @@ def test_unwritable_token_cache_does_not_break_login(tmp_path):
     blocker.write_text("ich bin eine Datei, kein Ordner")
     c = BeatportClient("u", "p", client_id="cid", token_cache=blocker / "musiclib" / "tok.json", session=FakeSession())
     assert c.search_tracks("x")[0].id == 1
+
+
+def test_enrich_track_number_and_album_artist(tmp_path):
+    c = BeatportClient("u", "p", client_id="cid", token_cache=tmp_path / "t.json", session=FakeSession())
+    t = BeatportTrack.from_api(dict(API_TRACK, release=dict(API_TRACK["release"], id=77)))
+    e = c.enrich(t)
+    assert (e.album_artist, e.track_number, e.track_total, e.enriched) == ("Daft Punk", 2, 3, True)
+    va = c.enrich(BeatportTrack.from_api(dict(API_TRACK, release=dict(API_TRACK["release"], id=78))))
+    assert va.album_artist == "Various Artists" and va.track_number is None
 
 
 @pytest.mark.live

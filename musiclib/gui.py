@@ -16,11 +16,12 @@ from PySide6.QtWidgets import (
 )
 
 from . import __version__
+from .backup import backup_dir
 from .bandcamp import BandcampClient
 from .beatport import BeatportClient
 from .dialogs import CandidateDialog, MetadataDialog, SettingsDialog, meta_from_local
 from .discogs import DiscogsClient
-from .matcher import match_item
+from .matcher import enrich, match_item
 from .models import LibraryItem, MatchStatus
 from .organizer import assign_targets, validate_template
 from .pipeline import ApplyOptions, apply_item, make_cover_loader
@@ -38,9 +39,9 @@ STATUS_COLORS = {
 }
 MISSING_COLOR = QColor(219, 171, 9, 80)
 
-COLUMNS = ["", "Status", "Quelle", "Datei", "Format", "Lokal erkannt", "Treffer", "Score",
+COLUMNS = ["", "Status", "Quelle", "Datei", "Format", "Lokal erkannt", "Treffer", "Score", "Album-Artist", "Nr.",
            "Genre", "Label", "Jahr", "BPM", "Key", "Fehlt", "Ziel"]
-(COL_CHECK, COL_STATUS, COL_SOURCE, COL_FILE, COL_FMT, COL_LOCAL, COL_MATCH, COL_SCORE,
+(COL_CHECK, COL_STATUS, COL_SOURCE, COL_FILE, COL_FMT, COL_LOCAL, COL_MATCH, COL_SCORE, COL_ALBUMARTIST, COL_TRACK,
  COL_GENRE, COL_LABEL, COL_YEAR, COL_BPM, COL_KEY, COL_MISSING, COL_TARGET) = range(len(COLUMNS))
 
 FILTERS = {
@@ -168,7 +169,8 @@ class MainWindow(QMainWindow):
         hh.setSectionResizeMode(QHeaderView.Interactive)
         hh.setStretchLastSection(True)
         for col, w in ((COL_CHECK, 28), (COL_STATUS, 95), (COL_SOURCE, 75), (COL_FILE, 200), (COL_FMT, 75),
-                       (COL_LOCAL, 220), (COL_MATCH, 280), (COL_SCORE, 50), (COL_GENRE, 110), (COL_LABEL, 120),
+                       (COL_LOCAL, 220), (COL_MATCH, 280), (COL_SCORE, 50), (COL_ALBUMARTIST, 120), (COL_TRACK, 45),
+                       (COL_GENRE, 110), (COL_LABEL, 120),
                        (COL_YEAR, 45), (COL_BPM, 40), (COL_KEY, 45), (COL_MISSING, 90)):
             self.table.setColumnWidth(col, w)
         self.table.cellDoubleClicked.connect(lambda row, _c: self.choose_match(row))
@@ -350,6 +352,9 @@ class MainWindow(QMainWindow):
             COL_LOCAL: f"{loc.artist} – {loc.title}" + (f" ({loc.mix})" if loc.mix else ""),
             COL_MATCH: meta.display if meta else "",
             COL_SCORE: f"{it.score:.0%}" if it.candidates else "",
+            COL_ALBUMARTIST: meta.effective_album_artist if meta else "",
+            COL_TRACK: (f"{meta.track_number}/{meta.track_total}" if meta.track_total else str(meta.track_number))
+            if meta and meta.track_number else "",
             COL_GENRE: meta.genre if meta else "",
             COL_LABEL: meta.label if meta else "",
             COL_YEAR: meta.year if meta else "",
@@ -469,7 +474,12 @@ class MainWindow(QMainWindow):
             item.selected, item.status, item.score = None, MatchStatus.NOT_FOUND, 0.0
             item.message = "manuell: kein Treffer"
         else:
-            item.selected, item.score = dlg.choice.track, dlg.choice.score
+            QApplication.setOverrideCursor(Qt.WaitCursor)
+            try:
+                item.selected = enrich(dlg.choice.track, sources)  # Tracknummer/Album-Artist nachladen
+            finally:
+                QApplication.restoreOverrideCursor()
+            item.score = dlg.choice.score
             item.status = MatchStatus.MANUAL
             item.message = f"manuell gewählt ({dlg.choice.track.source})"
             if dlg.choice not in item.candidates:
@@ -485,10 +495,11 @@ class MainWindow(QMainWindow):
             return
         item = self.items[row]
         meta = item.selected or meta_from_local(item.local)
-        dlg = MetadataDialog(self, meta, self.settings)
+        dlg = MetadataDialog(self, meta, self.settings, item.local, item.keep_tags)
         if dlg.exec() != QDialog.Accepted:
             return
         item.selected = dlg.result_meta()
+        item.keep_tags = dlg.result_keep()
         item.status = MatchStatus.MANUAL
         item.message = "Metadaten bearbeitet"
         self.refresh_targets()
@@ -608,10 +619,13 @@ class MainWindow(QMainWindow):
                 lines.append(f"• ⚠ {n_incomplete} mit fehlenden Pflichtfeldern")
         lines.append("• Modus: " + ("VERSCHIEBEN – Originale (auch FLAC/WAV) werden entfernt!" if s.move
                                     else "Kopieren – Originale bleiben unverändert"))
+        if s.clean_tags:
+            lines.append("• Vorhandene Tags werden ersetzt (Backup der alten Tags wird angelegt)")
         if QMessageBox.question(self, "Ausführen", "\n".join(lines)) != QMessageBox.Yes:
             return
         opts = ApplyOptions(move=s.move, label_fallback=s.label_fallback,
-                            tag=TagOptions(key_format=s.key_format, mix_in_title=s.mix_in_title, embed_cover=s.embed_cover))
+                            tag=TagOptions(key_format=s.key_format, mix_in_title=s.mix_in_title,
+                                           embed_cover=s.embed_cover, clean=s.clean_tags))
         cover_loader = make_cover_loader(self.sources())
 
         def job(w: Worker):
@@ -634,6 +648,8 @@ class MainWindow(QMainWindow):
                     w.log.emit(f"✘ {it.local.path.name}: {e}")
                 w.item_done.emit(row)
             w.log.emit(f"Fertig: {ok} erfolgreich, {fail} fehlgeschlagen.")
+            if s.clean_tags and ok:
+                w.log.emit(f"Backup der alten Tags: {backup_dir()}")
 
         self.run_worker(job, self.update_buttons)
 

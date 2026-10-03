@@ -6,6 +6,7 @@ OAuth-Authorization-Code-Flow mit der öffentlichen Client-ID der API-Docs.
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 import os
 import re
 import sys
@@ -35,6 +36,10 @@ def _cache_dir() -> Path:
 DEFAULT_TOKEN_CACHE = _cache_dir() / "beatport_token.json"
 
 
+VARIOUS_ARTISTS = "Various Artists"
+VARIOUS_LIMIT = 3  # mehr Release-Artists -> Compilation
+
+
 class BeatportError(RuntimeError):
     pass
 
@@ -58,6 +63,8 @@ class BeatportClient:
         self.session = session or requests.Session()
         self.timeout = timeout
         self._token: dict | None = None
+        self._release_cache: dict[str, dict] = {}
+        self._release_tracks_cache: dict[str, list[str]] = {}
 
     # ------------------------------------------------------------------ auth
     def _discover_client_id(self) -> str:
@@ -207,6 +214,47 @@ class BeatportClient:
 
     def search_text(self, query: str) -> list[TrackMeta]:
         return self.search_tracks(query, per_page=25)
+
+    def release(self, release_id: str) -> dict:
+        if release_id not in self._release_cache:
+            self._release_cache[release_id] = self._get(f"/catalog/releases/{release_id}/")
+        return self._release_cache[release_id]
+
+    def release_track_ids(self, release_id: str) -> list[str]:
+        """Track-IDs eines Releases in Tracklisten-Reihenfolge.
+
+        Achtung: Das Feld ``tracks`` im Release-Objekt ist umgekehrt sortiert –
+        die richtige Reihenfolge liefert nur dieser Endpunkt.
+        """
+        if release_id not in self._release_tracks_cache:
+            ids: list[str] = []
+            page = 1
+            while True:
+                data = self._get(f"/catalog/releases/{release_id}/tracks/", {"per_page": 100, "page": page})
+                ids += [str(t["id"]) for t in data.get("results", [])]
+                if not data.get("next") or page >= 10:
+                    break
+                page += 1
+            self._release_tracks_cache[release_id] = ids
+        return self._release_tracks_cache[release_id]
+
+    def enrich(self, meta: TrackMeta) -> TrackMeta:
+        """Ergänzt Album-Artist, Tracknummer und Trackanzahl aus dem Release."""
+        if meta.enriched or not meta.release_id:
+            return meta
+        rel = self.release(meta.release_id)
+        artists = [a["name"] for a in rel.get("artists") or []]
+        album_artist = VARIOUS_ARTISTS if len(artists) > VARIOUS_LIMIT else ", ".join(artists)
+        ids = self.release_track_ids(meta.release_id)
+        number = ids.index(str(meta.id)) + 1 if str(meta.id) in ids else None
+        return replace(
+            meta,
+            album_artist=album_artist,
+            track_number=number,
+            track_total=rel.get("track_count") or len(ids) or None,
+            catalog_number=meta.catalog_number or rel.get("catalog_number") or "",
+            enriched=True,
+        )
 
     def download_image(self, dynamic_uri: str, size: int = 600) -> bytes | None:
         if not dynamic_uri:

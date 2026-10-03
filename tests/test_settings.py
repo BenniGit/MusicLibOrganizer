@@ -17,11 +17,11 @@ def test_presets_are_valid():
 
 
 def test_label_fallback():
-    s = AppSettings(label_fallback="Self-Released")
+    s = AppSettings(label_fallback="Self-Released", required_fields=["artist", "title", "genre", "label", "year"])
     assert effective_meta(meta(), s).label == "Self-Released"
     assert effective_meta(meta(label="Drumcode"), s).label == "Drumcode"
     assert missing_fields(meta(), s) == []
-    assert missing_fields(meta(), AppSettings(label_fallback="")) == ["Label"]
+    assert missing_fields(meta(), AppSettings(label_fallback="", required_fields=["label"])) == ["Label"]
 
 
 def test_missing_fields():

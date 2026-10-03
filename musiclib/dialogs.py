@@ -99,6 +99,11 @@ class SettingsDialog(QDialog):
         self.cover_check = QCheckBox("Cover einbetten")
         self.cover_check.setChecked(s.embed_cover)
         form.addRow("", self.cover_check)
+        self.clean_check = QCheckBox("Vorhandene Tags komplett ersetzen (alte Tags werden vorher gesichert)")
+        self.clean_check.setToolTip("Entfernt alle bisherigen Tags. Einzelne Tags kannst du pro Track im "
+                                    "Metadaten-Editor behalten. Die alten Tags landen als Backup im App-Datenordner.")
+        self.clean_check.setChecked(s.clean_tags)
+        form.addRow("", self.clean_check)
         lay.addLayout(form)
 
         req = QGroupBox("Pflichtfelder – Tracks ohne diese Angaben gelten als „unvollständig“")
@@ -198,10 +203,14 @@ class SettingsDialog(QDialog):
         examples = [
             TrackMeta(id=1, name="Losing It", mix="Original Mix", artists=["Fisher"], release="Losing It",
                       label="Catch & Release", genre="Tech House", bpm=125, key_camelot="9B", key_name="G Major",
-                      release_date="2018-07-13"),
+                      release_date="2018-07-13", catalog_number="CR001", track_number=1, track_total=1),
             TrackMeta(id=2, name="Doppler", mix="", artists=["Charlotte de Witte"], release="Formula EP",
                       label="", genre="Techno (Peak Time / Driving)", bpm=135, key_camelot="6B",
-                      release_date="2021-04-29"),
+                      release_date="2021-04-29", track_number=2, track_total=3),
+            TrackMeta(id=3, name="Gecko (Overdrive)", mix="Extended Mix", artists=["Oliver Heldens", "Becky Hill"],
+                      release="Defected Ibiza 2019", album_artist="Various Artists", label="Defected",
+                      genre="House", release_date="2019-05-24", catalog_number="DFTDDCD2", track_number=17,
+                      track_total=62),
         ]
         fallback = self.label_fallback.text() if hasattr(self, "label_fallback") else ""
         lines = []
@@ -225,6 +234,7 @@ class SettingsDialog(QDialog):
             key_format=self.key_combo.currentData(),
             mix_in_title=self.mix_check.isChecked(),
             embed_cover=self.cover_check.isChecked(),
+            clean_tags=self.clean_check.isChecked(),
             required_fields=[k for k, cb in self.required_checks.items() if cb.isChecked()],
             label_fallback=self.label_fallback.text().strip(),
             use_discogs=self.use_discogs.isChecked(),
@@ -357,21 +367,43 @@ class CandidateDialog(QDialog):
 
 
 # ---------------------------------------------------------------------------- Metadaten bearbeiten
-class MetadataDialog(QDialog):
-    """Erlaubt kleine Korrekturen an den Metadaten, bevor sie geschrieben werden."""
+# Felder, deren alter Wert im Editor angeboten wird (Schlüssel wie in LocalTrack.old)
+MAPPED_OLD_KEYS = {"artist", "title", "mix", "remixers", "albumartist", "album", "label", "catno", "genre",
+                   "subgenre", "date", "bpm", "key", "isrc", "track", "disc"}
 
-    def __init__(self, parent, meta: TrackMeta, settings: AppSettings):
+
+def _split_number(value: str) -> tuple[int, int]:
+    """'7/12' -> (7, 12); '7' -> (7, 0)."""
+    parts = [p.strip() for p in value.split("/")]
+    num = int(parts[0]) if parts and parts[0].isdigit() else 0
+    total = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
+    return num, total
+
+
+class MetadataDialog(QDialog):
+    """Kleine Korrekturen vor dem Schreiben; zeigt die bisherigen Tags der Datei zum Übernehmen."""
+
+    def __init__(self, parent, meta: TrackMeta, settings: AppSettings, local: LocalTrack | None = None,
+                 keep: set[str] | None = None):
         super().__init__(parent)
         self.setWindowTitle("Metadaten bearbeiten")
-        self.resize(560, 0)
+        self.resize(820, 0)
         self.meta = meta
         self.settings = settings
-        form = QFormLayout(self)
+        self.old = dict(local.old) if local else {}
+        lay = QVBoxLayout(self)
 
         src = meta.source + (" (bearbeitet)" if meta.edited else "")
-        src_label = QLabel(f'<a href="{meta.url}">{src}</a>' if meta.url else src)
-        src_label.setOpenExternalLinks(True)
-        form.addRow("Quelle", src_label)
+        head = QLabel(f'Quelle: <a href="{meta.url}">{src}</a>' if meta.url else f"Quelle: {src}")
+        head.setOpenExternalLinks(True)
+        lay.addWidget(head)
+
+        grid = QGridLayout()
+        grid.addWidget(QLabel("<b>Neu</b>"), 0, 1)
+        if self.old:
+            grid.addWidget(QLabel("<b>Bisher in der Datei</b> (Klick = übernehmen)"), 0, 2)
+        lay.addLayout(grid)
+        self._row = 1
 
         def line(value: str, placeholder: str = "") -> QLineEdit:
             e = QLineEdit(value)
@@ -379,22 +411,30 @@ class MetadataDialog(QDialog):
             e.textChanged.connect(self._update_missing)
             return e
 
+        def spin(value: int | None, maximum: int) -> QSpinBox:
+            sp = QSpinBox()
+            sp.setRange(0, maximum)
+            sp.setSpecialValueText("–")
+            sp.setValue(int(value or 0))
+            sp.valueChanged.connect(self._update_missing)
+            return sp
+
         self.artists = line(", ".join(meta.artists), "mehrere mit Komma trennen")
         self.title = line(meta.name)
         self.mix = line(meta.mix, "z. B. Original Mix, Extended Mix")
         self.remixers = line(", ".join(meta.remixers))
+        self.album_artist = line(meta.album_artist, f"leer = Artist ({meta.artist})" if meta.artist else "")
         self.release = line(meta.release)
+        self.track = spin(meta.track_number, 999)
+        self.total = spin(meta.track_total, 999)
+        self.disc = spin(meta.disc_number, 99)
         self.label = line(meta.label, f"leer = „{settings.label_fallback}“" if settings.label_fallback else "")
         self.catno = line(meta.catalog_number)
         self.genre = line(meta.genre)
         self.sub_genre = line(meta.sub_genre)
         self.date = line(meta.release_date, "JJJJ-MM-TT oder JJJJ")
         self.isrc = line(meta.isrc)
-        self.bpm = QSpinBox()
-        self.bpm.setRange(0, 300)
-        self.bpm.setSpecialValueText("–")
-        self.bpm.setValue(int(meta.bpm or 0))
-        self.bpm.valueChanged.connect(self._update_missing)
+        self.bpm = spin(meta.bpm, 300)
         self.key = QComboBox()
         self.key.setEditable(True)
         self.key.addItem("")
@@ -407,20 +447,100 @@ class MetadataDialog(QDialog):
             self.key.setEditText(meta.key_camelot or meta.key_name)
         self.key.currentTextChanged.connect(self._update_missing)
 
-        for label, w in (("Artist(s)", self.artists), ("Titel", self.title), ("Mix", self.mix),
-                         ("Remixer", self.remixers), ("Release / Album", self.release), ("Label", self.label),
-                         ("Katalognummer", self.catno), ("Genre", self.genre), ("Sub-Genre", self.sub_genre),
-                         ("Release-Datum", self.date), ("BPM", self.bpm), ("Key", self.key), ("ISRC", self.isrc)):
-            form.addRow(label, w)
+        track_box = QWidget()
+        tl = QHBoxLayout(track_box)
+        tl.setContentsMargins(0, 0, 0, 0)
+        for w, text in ((self.track, None), (self.total, "von"), (self.disc, "Disc")):
+            if text:
+                tl.addWidget(QLabel(text))
+            tl.addWidget(w)
+        tl.addStretch()
+
+        def set_line(edit):
+            return lambda v: edit.setText(v)
+
+        def set_track(v):
+            n, t = _split_number(v)
+            self.track.setValue(n)
+            if t:
+                self.total.setValue(t)
+
+        def set_key(v):
+            code = v.upper().replace(" ", "")
+            i = self.key.findData(code)
+            self.key.setCurrentIndex(i) if i >= 0 else self.key.setEditText(v)
+
+        def set_bpm(v):
+            try:
+                self.bpm.setValue(round(float(v.replace(",", "."))))
+            except ValueError:
+                pass
+
+        rows = [
+            ("Artist(s)", self.artists, "artist", set_line(self.artists)),
+            ("Titel", self.title, "title", set_line(self.title)),
+            ("Mix", self.mix, "mix", set_line(self.mix)),
+            ("Remixer", self.remixers, "remixers", set_line(self.remixers)),
+            ("Album-Artist", self.album_artist, "albumartist", set_line(self.album_artist)),
+            ("Release / Album", self.release, "album", set_line(self.release)),
+            ("Tracknummer", track_box, "track", set_track),
+            ("Label", self.label, "label", set_line(self.label)),
+            ("Katalognummer", self.catno, "catno", set_line(self.catno)),
+            ("Genre", self.genre, "genre", set_line(self.genre)),
+            ("Sub-Genre", self.sub_genre, "subgenre", set_line(self.sub_genre)),
+            ("Release-Datum", self.date, "date", set_line(self.date)),
+            ("BPM", self.bpm, "bpm", set_bpm),
+            ("Key", self.key, "key", set_key),
+            ("ISRC", self.isrc, "isrc", set_line(self.isrc)),
+        ]
+        for label, widget, old_key, setter in rows:
+            grid.addWidget(QLabel(label), self._row, 0)
+            grid.addWidget(widget, self._row, 1)
+            old = self.old.get(old_key, "")
+            if old:
+                b = QPushButton("← " + (old if len(old) <= 40 else old[:38] + "…"))
+                b.setFlat(True)
+                b.setStyleSheet("text-align: left; color: palette(link);")
+                b.setToolTip(f"Bisheriger Wert: {old}\nKlicken zum Übernehmen")
+                b.clicked.connect(lambda _=False, s=setter, v=old: s(v))
+                grid.addWidget(b, self._row, 2)
+            self._row += 1
+        grid.setColumnStretch(1, 3)
+        grid.setColumnStretch(2, 2)
+
+        # Übrige vorhandene Tags (z. B. Kommentar, Komponist, Rating) zum Behalten anhaken
+        self.extra_checks: dict[str, QCheckBox] = {}
+        extra = [(k, label, v) for k, label, v in (local.raw_tags if local else [])
+                 if not self._is_mapped(k)]
+        if extra:
+            title = ("Weitere vorhandene Tags – werden entfernt, außer du hakst sie an"
+                     if settings.clean_tags else "Weitere vorhandene Tags – bleiben erhalten")
+            box = QGroupBox(title)
+            bl = QVBoxLayout(box)
+            for k, label, v in extra:
+                short = v if len(v) <= 70 else v[:68] + "…"
+                cb = QCheckBox(f"{label}: {short}")
+                cb.setToolTip(f"{k}\n{v}")
+                cb.setChecked(k in (keep or set()) or not settings.clean_tags)
+                cb.setEnabled(settings.clean_tags)
+                self.extra_checks[k] = cb
+                bl.addWidget(cb)
+            lay.addWidget(box)
 
         self.missing = QLabel()
         self.missing.setWordWrap(True)
-        form.addRow(self.missing)
+        lay.addWidget(self.missing)
         bb = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
         bb.accepted.connect(self.accept)
         bb.rejected.connect(self.reject)
-        form.addRow(bb)
+        lay.addWidget(bb)
         self._update_missing()
+
+    @staticmethod
+    def _is_mapped(key: str) -> bool:
+        from .scanner import ID3_FIELDS, VORBIS_FIELDS
+
+        return key in ID3_FIELDS or key.split(":", 1)[0] in ID3_FIELDS or key.lower() in VORBIS_FIELDS
 
     def _key_values(self) -> tuple[str, str]:
         data = self.key.currentData()
@@ -443,7 +563,11 @@ class MetadataDialog(QDialog):
             name=self.title.text().strip(),
             mix=self.mix.text().strip(),
             remixers=split(self.remixers.text()),
+            album_artist=self.album_artist.text().strip(),
             release=self.release.text().strip(),
+            track_number=self.track.value() or None,
+            track_total=self.total.value() or None,
+            disc_number=self.disc.value() or None,
             label=self.label.text().strip(),
             catalog_number=self.catno.text().strip(),
             genre=self.genre.text().strip(),
@@ -454,7 +578,11 @@ class MetadataDialog(QDialog):
             key_camelot=camelot,
             key_name=key_name,
             edited=True,
+            enriched=True,
         )
+
+    def result_keep(self) -> set[str]:
+        return {k for k, cb in self.extra_checks.items() if cb.isChecked()}
 
     def _update_missing(self, *_args) -> None:
         from .settings import missing_fields
@@ -467,7 +595,23 @@ class MetadataDialog(QDialog):
 
 
 def meta_from_local(local: LocalTrack) -> TrackMeta:
-    """Startpunkt für manuelle Erfassung, wenn keine Quelle etwas gefunden hat."""
-    return TrackMeta(id=str(local.path), name=local.title, mix=local.mix,
-                     artists=[local.artist] if local.artist else [], release=local.album,
-                     isrc=local.isrc, source="Manuell")
+    """Startpunkt für manuelle Erfassung: alle bisherigen Tags der Datei vorausgefüllt."""
+    old = local.old
+    num, total = _split_number(old.get("track", ""))
+    disc, _ = _split_number(old.get("disc", ""))
+    try:
+        bpm = round(float(old.get("bpm", "").replace(",", "."))) or None
+    except ValueError:
+        bpm = None
+    key = old.get("key", "").upper().replace(" ", "")
+    return TrackMeta(
+        id=str(local.path), name=local.title, mix=local.mix,
+        artists=[a.strip() for a in local.artist.split(",") if a.strip()] if local.artist else [],
+        remixers=[r.strip() for r in old.get("remixers", "").split(",") if r.strip()],
+        album_artist=old.get("albumartist", ""), release=local.album,
+        track_number=num or None, track_total=total or None, disc_number=disc or None,
+        label=old.get("label", ""), catalog_number=old.get("catno", ""), genre=old.get("genre", ""),
+        sub_genre=old.get("subgenre", ""), release_date=old.get("date", ""), isrc=local.isrc, bpm=bpm,
+        key_camelot=key if key in CAMELOT_TO_KEY else "", key_name=CAMELOT_TO_KEY.get(key, old.get("key", "")),
+        source="Manuell", enriched=True,
+    )

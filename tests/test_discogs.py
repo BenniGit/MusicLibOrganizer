@@ -39,6 +39,13 @@ def test_tracks_from_release():
     assert (t.name, t.mix, t.artists, t.label, t.catalog_number) == ("Losing It", "Original", ["Fisher"], "Catch & Release", "CR001B")
     assert (t.genre, t.sub_genre, t.release_date, t.length_ms, t.source) == ("Tech House", "House", "2018-07-13", 400000, "Discogs")
     assert tracks[1].remixers == ["Someone"]
+    assert [(x.track_number, x.track_total, x.album_artist) for x in tracks] == [(1, 2, "Fisher"), (2, 2, "Fisher")]
+
+
+def test_parse_disc():
+    from musiclib.discogs import parse_disc
+    assert parse_disc("2-3") == 2 and parse_disc("CD1-4") == 1
+    assert parse_disc("A1") is None and parse_disc("3") is None
 
 
 def test_self_released_has_no_label():

@@ -4,9 +4,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+import mutagen
+from mutagen.apev2 import delete as delete_ape
 from mutagen.id3 import (
-    APIC, ID3, ID3NoHeaderError, TALB, TBPM, TCON, TDRC, TIT2, TKEY, TPE1, TPE4, TPUB, TSRC, TXXX, WOAF,
+    APIC, ID3, ID3NoHeaderError, TALB, TBPM, TCON, TDRC, TIT2, TKEY, TPE1, TPE2, TPE4, TPOS, TPUB, TRCK, TSRC,
+    TXXX, WOAF, Frame,
 )
+from mutagen.id3 import delete as delete_id3
 
 from .models import TrackMeta
 
@@ -25,6 +29,7 @@ class TagOptions:
     key_format: str = "camelot"  # "camelot" | "musical"
     mix_in_title: bool = True
     embed_cover: bool = True
+    clean: bool = True  # alle vorhandenen Tags entfernen, bevor neue geschrieben werden
 
 
 def format_key(track: TrackMeta, key_format: str) -> str:
@@ -39,11 +44,43 @@ def format_title(track: TrackMeta, mix_in_title: bool) -> str:
     return track.name
 
 
-def write_tags(path: Path, track: TrackMeta, opts: TagOptions, cover: bytes | None = None) -> None:
+def kept_frames(src: Path, keys: set[str]) -> list[Frame]:
+    """Liest die ausgewählten vorhandenen Tags aus der Originaldatei (ID3-Frames oder FLAC-Kommentare)."""
+    if not keys:
+        return []
     try:
-        tags = ID3(path)
-    except ID3NoHeaderError:
+        audio = mutagen.File(src)
+    except Exception:
+        return []
+    tags = getattr(audio, "tags", None)
+    if tags is None:
+        return []
+    if isinstance(tags, ID3):
+        return [tags[k] for k in keys if k in tags]
+    frames = []
+    for k in sorted(keys):  # FLAC-Kommentare werden zu benutzerdefinierten ID3-Feldern
+        values = tags.get(k)
+        if values:
+            frames.append(TXXX(encoding=3, desc=k.upper(), text=list(values)))
+    return frames
+
+
+def write_tags(path: Path, track: TrackMeta, opts: TagOptions, cover: bytes | None = None,
+               keep: list[Frame] | None = None) -> None:
+    if opts.clean:
+        delete_id3(path, delete_v1=True, delete_v2=True)
+        try:
+            delete_ape(path)
+        except Exception:
+            pass
         tags = ID3()
+    else:
+        try:
+            tags = ID3(path)
+        except ID3NoHeaderError:
+            tags = ID3()
+    for frame in keep or []:
+        tags.add(frame)
 
     def put(frame_cls, value, **kw):
         tags.delall(frame_cls.__name__ if not kw.get("desc") else f"{frame_cls.__name__}:{kw['desc']}")
@@ -52,7 +89,13 @@ def write_tags(path: Path, track: TrackMeta, opts: TagOptions, cover: bytes | No
 
     put(TPE1, track.artist)
     put(TIT2, format_title(track, opts.mix_in_title))
+    put(TPE2, track.effective_album_artist)
     put(TALB, track.release)
+    if track.track_number:
+        put(TRCK, f"{track.track_number}/{track.track_total}" if track.track_total else track.track_number)
+    else:
+        put(TRCK, "")
+    put(TPOS, track.disc_number)
     put(TPUB, track.label)
     put(TCON, track.genre)
     put(TBPM, track.bpm)
@@ -74,4 +117,4 @@ def write_tags(path: Path, track: TrackMeta, opts: TagOptions, cover: bytes | No
         tags.delall("APIC")
         tags.add(APIC(encoding=3, mime="image/jpeg", type=3, desc="Cover", data=cover))
 
-    tags.save(path, v2_version=4)
+    tags.save(path, v2_version=4, v1=0)

@@ -40,18 +40,76 @@ def parse_filename(stem: str) -> tuple[str, str, str]:
     return artist, title, mix
 
 
-def _first(tags, *keys: str) -> str:
-    for k in keys:
-        v = tags.get(k) if tags is not None else None
-        if v:
-            if isinstance(v, list):
-                v = v[0]
-            v = getattr(v, "text", v)
-            if isinstance(v, list):
-                v = v[0] if v else ""
-            if str(v).strip():
-                return str(v).strip()
-    return ""
+# ID3-Frame -> Feldname im Editor
+ID3_FIELDS = {
+    "TPE1": "artist", "TIT2": "title", "TPE2": "albumartist", "TALB": "album", "TPUB": "label",
+    "TCON": "genre", "TBPM": "bpm", "TKEY": "key", "TDRC": "date", "TYER": "date", "TSRC": "isrc",
+    "TPE4": "remixers", "TRCK": "track", "TPOS": "disc", "TXXX:CATALOGNUMBER": "catno",
+    "TXXX:MIX": "mix", "TXXX:SUBGENRE": "subgenre",
+}
+# Vorbis-Kommentar (FLAC) -> Feldname
+VORBIS_FIELDS = {
+    "artist": "artist", "title": "title", "albumartist": "albumartist", "album artist": "albumartist",
+    "album": "album", "label": "label", "organization": "label", "publisher": "label", "genre": "genre",
+    "bpm": "bpm", "initialkey": "key", "key": "key", "date": "date", "year": "date", "isrc": "isrc",
+    "remixer": "remixers", "tracknumber": "track", "discnumber": "disc", "catalognumber": "catno",
+}
+# Lesbare Namen für die Anzeige
+ID3_LABELS = {
+    "TPE1": "Artist", "TIT2": "Titel", "TPE2": "Album-Artist", "TALB": "Album", "TPUB": "Label", "TCON": "Genre",
+    "TBPM": "BPM", "TKEY": "Key", "TDRC": "Datum", "TYER": "Jahr", "TSRC": "ISRC", "TPE4": "Remixer",
+    "TRCK": "Tracknummer", "TPOS": "Disc", "TCOM": "Komponist", "TOPE": "Original-Artist", "TIT1": "Grouping",
+    "TIT3": "Untertitel", "TCOP": "Copyright", "TENC": "Encoder", "TSSE": "Encoder-Einstellungen",
+    "TDOR": "Original-Datum", "TLEN": "Länge", "TMED": "Medium", "COMM": "Kommentar", "USLT": "Lyrics",
+    "APIC": "Cover", "POPM": "Rating", "PCNT": "Playcount", "GEOB": "Eingebettete Daten (z. B. Serato)",
+    "PRIV": "Private Daten (z. B. Traktor)", "WOAF": "URL", "WXXX": "URL", "UFID": "Datei-ID",
+}
+
+
+def _frame_text(frame) -> str:
+    text = getattr(frame, "text", None)
+    if text is not None:
+        return " / ".join(str(t) for t in text)
+    if hasattr(frame, "url"):
+        return frame.url
+    data = getattr(frame, "data", None)
+    if data is not None:
+        return f"<{len(data)} Bytes>"
+    if hasattr(frame, "rating"):
+        return str(frame.rating)
+    return str(frame)
+
+
+def _read_id3(tags: ID3) -> tuple[dict[str, str], list[tuple[str, str, str]]]:
+    old: dict[str, str] = {}
+    raw: list[tuple[str, str, str]] = []
+    for key, frame in tags.items():
+        value = _frame_text(frame).strip()
+        if not value:
+            continue
+        frame_id = key.split(":", 1)[0]
+        label = ID3_LABELS.get(frame_id, frame_id)
+        if frame_id in ("TXXX", "COMM", "WXXX") and getattr(frame, "desc", ""):
+            label = f"{label} ({frame.desc})"
+        raw.append((key, label, value))
+        name = ID3_FIELDS.get(key) or ID3_FIELDS.get(frame_id if frame_id != "TXXX" else key.upper())
+        if name and name not in old:
+            old[name] = value
+    return old, raw
+
+
+def _read_vorbis(tags) -> tuple[dict[str, str], list[tuple[str, str, str]]]:
+    old: dict[str, str] = {}
+    raw: list[tuple[str, str, str]] = []
+    for key in sorted({k.lower() for k in tags.keys()}):
+        value = " / ".join(tags[key]).strip()
+        if not value:
+            continue
+        raw.append((key, key.title(), value))
+        name = VORBIS_FIELDS.get(key)
+        if name and name not in old:
+            old[name] = value
+    return old, raw
 
 
 def read_track(path: Path) -> LocalTrack:
@@ -66,18 +124,15 @@ def read_track(path: Path) -> LocalTrack:
             track.duration_s = getattr(audio.info, "length", None)
         tags = audio.tags
         if isinstance(tags, ID3):
-            track.artist = _first(tags, "TPE1")
-            track.title = _first(tags, "TIT2")
-            track.album = _first(tags, "TALB")
-            track.isrc = _first(tags, "TSRC", "TXXX:ISRC")
+            track.old, track.raw_tags = _read_id3(tags)
         elif tags is not None:  # Vorbis-Kommentare (FLAC)
-            track.artist = _first(tags, "artist", "ARTIST")
-            track.title = _first(tags, "title", "TITLE")
-            track.album = _first(tags, "album", "ALBUM")
-            track.isrc = _first(tags, "isrc", "ISRC")
-
-    if track.title:
-        track.title, track.mix = split_mix(track.title)
+            track.old, track.raw_tags = _read_vorbis(tags)
+        track.artist = track.old.get("artist", "")
+        track.title = track.old.get("title", "")
+        track.album = track.old.get("album", "")
+        track.isrc = track.old.get("isrc", "")
+        if track.title:
+            track.title, track.mix = split_mix(track.title)
 
     if not track.artist or not track.title:
         fa, ft, fm = parse_filename(path.stem)

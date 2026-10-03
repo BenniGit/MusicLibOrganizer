@@ -8,7 +8,8 @@ from typing import Callable
 
 from .converter import to_mp3
 from .models import LibraryItem, TrackMeta
-from .tagger import TagOptions, write_tags
+from .backup import backup_tags
+from .tagger import TagOptions, kept_frames, write_tags
 
 
 @dataclass
@@ -16,6 +17,7 @@ class ApplyOptions:
     move: bool = False  # False: Originale bleiben liegen, True: Originale werden entfernt
     tag: TagOptions = field(default_factory=TagOptions)
     label_fallback: str = ""
+    backup_dir: Path | None = None  # None = Standardordner, siehe backup.py
 
 
 def apply_item(item: LibraryItem, opts: ApplyOptions, cover_loader: Callable[[TrackMeta], bytes | None] | None = None) -> str:
@@ -27,6 +29,10 @@ def apply_item(item: LibraryItem, opts: ApplyOptions, cover_loader: Callable[[Tr
     dst.parent.mkdir(parents=True, exist_ok=True)
     same_file = dst.exists() and dst.resolve() == src.resolve()
     actions = []
+    # Vor dem Verschieben/Überschreiben: zu behaltende Tags lesen und alte Tags sichern
+    keep = kept_frames(src, item.keep_tags) if item.selected else []
+    if item.selected and opts.tag.clean:
+        backup_tags(item.local, dst, opts.backup_dir)
 
     if item.local.needs_conversion:
         to_mp3(src, dst)
@@ -49,7 +55,7 @@ def apply_item(item: LibraryItem, opts: ApplyOptions, cover_loader: Callable[[Tr
                 cover = cover_loader(meta)
             except Exception:
                 cover = None
-        write_tags(dst, meta, opts.tag, cover)
+        write_tags(dst, meta, opts.tag, cover, keep)
         actions.append("getaggt")
 
     if opts.move and item.local.needs_conversion and src.exists():

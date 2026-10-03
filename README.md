@@ -13,7 +13,20 @@ Desktop-Tool (Python + Qt), das eine DJ-Musiksammlung aufräumt:
    - **„✔ 100%-Treffer übernehmen“** verarbeitet mit einem Klick alle Tracks mit 100 %-Treffer und alle manuell bestätigten Tracks – sofern alle Pflichtfelder gefüllt sind.
    - **„Markierte ausführen“** verarbeitet alle angehakten Tracks (mit Rückfrage und Warnung bei fehlenden Angaben).
 
-Beim Übernehmen werden FLAC/WAV/AIFF per ffmpeg zu **MP3 CBR 320 kbit/s** konvertiert (MP3s werden nicht neu kodiert), die Metadaten als ID3v2.4-Tags geschrieben (Artist, Titel, Mix, Release, Label, Genre, BPM, Key, Datum, ISRC, Remixer, Katalognummer, Cover, Quelle) und die Datei nach der gewählten Ordnerstruktur in die Ziel-Bibliothek gelegt.
+Beim Übernehmen werden FLAC/WAV/AIFF per ffmpeg zu **MP3 CBR 320 kbit/s** konvertiert (MP3s werden nicht neu kodiert), die Metadaten als ID3v2.4-Tags geschrieben und die Datei nach der gewählten Ordnerstruktur in die Ziel-Bibliothek gelegt.
+
+### Geschriebene Tags
+
+Artist, Titel (optional mit Mix), Album-Artist, Release/Album, Tracknummer (z. B. `3/12`), Disc, Label, Genre, BPM, Key, Release-Datum, ISRC, Remixer, Cover sowie als eigene Felder Mix-Name, Katalognummer, Sub-Genre, Quelle und Quellen-ID.
+Album-Artist und Tracknummer kommen aus dem Release (Beatport: eigene Abfrage pro Release, Compilations mit mehr als drei Artists werden zu „Various Artists“).
+
+### Vorhandene Tags
+
+Standardmäßig werden **alle vorhandenen Tags entfernt** (ID3v1, ID3v2, APE) und nur die neuen geschrieben. Vorher werden die alten Tags gesichert – eine JSON-Zeile pro Datei im App-Datenordner unter `tag-backups/`
+(macOS: `~/Library/Application Support/MusicLibOrganizer/`, Windows: `%APPDATA%\MusicLibOrganizer\`, Linux: `~/.local/share/musiclib/`).
+
+Im Metadaten-Editor steht neben jedem Feld der **bisherige Wert aus der Datei** – ein Klick übernimmt ihn. Alle übrigen vorhandenen Tags (Kommentar, Komponist, Rating …) werden darunter aufgelistet und können pro Track **zum Behalten angehakt** werden.
+Hinweis: Auch Cue-Punkte von Serato/Traktor, die in Tags gespeichert sind, werden entfernt, wenn du sie nicht anhakst. Rekordbox speichert Cues in seiner eigenen Datenbank und ist davon nicht betroffen.
 
 ## Treffer prüfen und korrigieren
 
@@ -27,14 +40,15 @@ Beim Übernehmen werden FLAC/WAV/AIFF per ffmpeg zu **MP3 CBR 320 kbit/s** konve
 
   | Vorlage | Beispiel |
   |---|---|
-  | Genre (empfohlen) | `Tech House/Fisher - Losing It (Original Mix).mp3` |
-  | Genre / Label | `Tech House/Catch & Release/Fisher - Losing It (Original Mix).mp3` |
-  | Import-Monat / Genre | `2026-10/Tech House/Fisher - Losing It (Original Mix).mp3` |
-  | Label / Release | `Catch & Release/2018 - Losing It/Fisher - Losing It (Original Mix).mp3` |
-  | Flach | `Fisher - Losing It (Original Mix).mp3` |
+  | Album-Artist / Release (empfohlen) | `Charlotte de Witte/Formula EP (2021)/01 - Charlotte de Witte - Doppler (Original Mix).mp3` |
+  | Genre / Album-Artist / Release | `Techno/Charlotte de Witte/Formula EP (2021)/01 - …` |
+  | Label / Release | `KNTXT/[KNTXT010] Charlotte de Witte - Formula EP/01 - …` |
+  | Genre (ein Ordner pro Genre) | `Techno/Charlotte de Witte - Doppler (Original Mix).mp3` |
+  | Import-Monat / Genre | `2026-10/Techno/Charlotte de Witte - Doppler (Original Mix).mp3` |
+  | Flach | `Charlotte de Witte - Doppler (Original Mix).mp3` |
 
-  Eigene Muster sind möglich mit `{artist}` `{title}` `{mix}` `{genre}` `{label}` `{album}` `{year}` `{bpm}` `{key}` `{added}`; `/` erzeugt Unterordner. Außerdem: Kopieren oder Verschieben.
-- **Tags & Pflichtfelder** – Key-Format (Camelot/Tonart), Mix-Name im Titel, Cover, welche Felder Pflicht sind, und ein **Ersatz-Label** (Standard „Self-Released“) für Tracks ohne Label.
+  Eigene Muster sind möglich mit `{artist}` `{albumartist}` `{title}` `{mix}` `{track}` `{disc}` `{album}` `{genre}` `{label}` `{catno}` `{year}` `{bpm}` `{key}` `{added}`; `/` erzeugt Unterordner, leere Ordnerebenen und überflüssige Trennzeichen werden entfernt. Außerdem: Kopieren oder Verschieben.
+- **Tags & Pflichtfelder** – Key-Format (Camelot/Tonart), Mix-Name im Titel, Cover, vorhandene Tags ersetzen (an/aus), welche Felder Pflicht sind (Standard: Artist, Titel, Album-Artist, Tracknummer, Album, Genre, Label, Jahr) und ein **Ersatz-Label** (Standard „Self-Released“) für Tracks ohne Label.
 - **Quellen** – Beatport-Zugang, Discogs-Token, Bandcamp an/aus, Schwellen für „gefunden“ und „100 %-Übernahme“.
 
 ## Installation
