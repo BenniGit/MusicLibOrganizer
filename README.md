@@ -33,7 +33,7 @@ export BEATPORT_USERNAME="dein-name"
 export BEATPORT_PASSWORD="dein-passwort"
 ```
 
-Das Access-Token wird unter `~/.cache/musiclib/beatport_token.json` gespeichert und automatisch erneuert. Das Passwort wird nicht gespeichert.
+Das Access-Token wird im Cache-Ordner des Systems (macOS: `~/Library/Caches/musiclib/`, Windows: `%LOCALAPPDATA%\musiclib\`, Linux: `~/.cache/musiclib/`) gespeichert und automatisch erneuert. Das Passwort wird nicht gespeichert.
 
 ## Starten
 

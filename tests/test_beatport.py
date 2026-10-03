@@ -72,6 +72,13 @@ def test_login_and_search_with_token_cache(tmp_path):
     assert not any(m == "POST" for m, _ in s2.calls)
 
 
+def test_unwritable_token_cache_does_not_break_login(tmp_path):
+    blocker = tmp_path / ".cache"
+    blocker.write_text("ich bin eine Datei, kein Ordner")
+    c = BeatportClient("u", "p", client_id="cid", token_cache=blocker / "musiclib" / "tok.json", session=FakeSession())
+    assert c.search_tracks("x")[0].id == 1
+
+
 @pytest.mark.live
 @pytest.mark.skipif(not (os.environ.get("BEATPORT_USERNAME") and os.environ.get("BEATPORT_PASSWORD")),
                     reason="BEATPORT_USERNAME/BEATPORT_PASSWORD nicht gesetzt")

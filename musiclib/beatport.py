@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import sys
 import time
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -18,7 +19,20 @@ from .models import BeatportTrack
 
 API = "https://api.beatport.com/v4"
 REDIRECT_URI = f"{API}/auth/o/post-message/"
-DEFAULT_TOKEN_CACHE = Path.home() / ".cache" / "musiclib" / "beatport_token.json"
+
+
+def _cache_dir() -> Path:
+    """Plattformüblicher Cache-Ordner (macOS: ~/Library/Caches, Windows: %LOCALAPPDATA%)."""
+    if sys.platform == "darwin":
+        base = Path.home() / "Library" / "Caches"
+    elif sys.platform == "win32":
+        base = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local")
+    else:
+        base = Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache")
+    return base / "musiclib"
+
+
+DEFAULT_TOKEN_CACHE = _cache_dir() / "beatport_token.json"
 
 
 class BeatportError(RuntimeError):
@@ -60,15 +74,17 @@ class BeatportClient:
         tok["username"] = self.username
         self._token = tok
         if self.token_cache:
-            self.token_cache.parent.mkdir(parents=True, exist_ok=True)
-            self.token_cache.write_text(json.dumps(tok))
+            # Der Cache ist nur eine Bequemlichkeit: schlägt das Speichern fehl,
+            # bleibt das Token für diese Sitzung im Speicher.
             try:
+                self.token_cache.parent.mkdir(parents=True, exist_ok=True)
+                self.token_cache.write_text(json.dumps(tok))
                 self.token_cache.chmod(0o600)
             except OSError:
                 pass
 
     def _load_cached_token(self) -> dict | None:
-        if not self.token_cache or not self.token_cache.exists():
+        if not self.token_cache:
             return None
         try:
             tok = json.loads(self.token_cache.read_text())
@@ -155,8 +171,11 @@ class BeatportClient:
             r = self.session.get(f"{API}{path}", params=params, headers=headers, timeout=self.timeout)
             if r.status_code == 401 and attempt == 0:
                 self._token = None
-                if self.token_cache and self.token_cache.exists():
-                    self.token_cache.unlink()
+                if self.token_cache:
+                    try:
+                        self.token_cache.unlink(missing_ok=True)
+                    except OSError:
+                        pass
                 continue
             if r.status_code == 429:
                 time.sleep(float(r.headers.get("Retry-After", 2 ** attempt)))
