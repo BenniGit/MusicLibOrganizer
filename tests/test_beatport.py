@@ -3,7 +3,7 @@ import os
 import pytest
 
 from musiclib.beatport import BeatportClient
-from musiclib.models import BeatportTrack
+from musiclib.models import TrackMeta
 
 API_TRACK = {
     "id": 1, "name": "One More Time", "mix_name": "12 Mix", "artists": [{"name": "Daft Punk"}],
@@ -16,7 +16,7 @@ API_TRACK = {
 
 
 def test_from_api():
-    t = BeatportTrack.from_api(API_TRACK)
+    t = TrackMeta.from_api(API_TRACK)
     assert t.display == "Daft Punk - One More Time (12 Mix)"
     assert (t.key_camelot, t.genre, t.label, t.sub_genre) == ("10B", "House", "Daft Life", "")
     assert t.image_url == "https://img/{w}x{h}.jpg"

@@ -10,7 +10,7 @@ from mutagen.id3 import ID3
 
 from .models import SUPPORTED_EXTENSIONS, LocalTrack
 
-_MIX_RE = re.compile(r"^(?P<title>.*?)\s*[\(\[](?P<mix>[^\)\]]*(?:mix|edit|remix|dub|version|rework|bootleg|vip)[^\)\]]*)[\)\]]\s*$", re.I)
+_MIX_RE = re.compile(r"^(?P<title>.*?)\s*[\(\[](?P<mix>[^\)\]]*(?:mix|edit|remix|dub|version|rework|bootleg|vip|original|extended|instrumental|club|radio)[^\)\]]*)[\)\]]\s*$", re.I)
 _TRACKNO_RE = re.compile(r"^\s*\d{1,3}\s*[-._)]?\s+")
 
 

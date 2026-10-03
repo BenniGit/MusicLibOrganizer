@@ -3,14 +3,16 @@ from __future__ import annotations
 
 import re
 import string
+from datetime import date
 from pathlib import Path
 
 from .models import LibraryItem
 from .tagger import format_key
 
-DEFAULT_TEMPLATE = "{genre}/{artist} - {title} ({mix})"
+from .settings import DEFAULT_TEMPLATE  # noqa: F401  (Re-Export)
+
 UNKNOWN_GENRE = "_Unbekannt"
-PLACEHOLDERS = ("artist", "title", "mix", "genre", "label", "album", "year", "bpm", "key")
+PLACEHOLDERS = ("artist", "title", "mix", "genre", "label", "album", "year", "bpm", "key", "added")
 
 _INVALID = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 _EMPTY_BRACKETS = re.compile(r"\s*(\(\s*\)|\[\s*\])")
@@ -43,50 +45,55 @@ def validate_template(template: str) -> str | None:
     return None
 
 
-def fields_for(item: LibraryItem, key_format: str = "camelot") -> dict[str, str]:
+def fields_for(item: LibraryItem, key_format: str = "camelot", label_fallback: str = "") -> dict[str, str]:
     bp = item.selected
     loc = item.local
+    added = date.today().strftime("%Y-%m")
     if bp:
         return {
             "artist": bp.artist,
             "title": bp.name,
             "mix": bp.mix,
             "genre": bp.genre or UNKNOWN_GENRE,
-            "label": bp.label,
+            "label": bp.label or label_fallback,
             "album": bp.release,
             "year": bp.release_date[:4],
             "bpm": str(bp.bpm or ""),
             "key": format_key(bp, key_format),
+            "added": added,
         }
     return {
         "artist": loc.artist or "Unbekannt",
         "title": loc.title or loc.path.stem,
         "mix": loc.mix,
         "genre": UNKNOWN_GENRE,
-        "label": "",
+        "label": label_fallback,
         "album": loc.album,
         "year": "",
         "bpm": "",
         "key": "",
+        "added": added,
     }
 
 
-def target_path(item: LibraryItem, target_root: Path, template: str, key_format: str = "camelot") -> Path:
-    fields = {k: re.sub(r"\s*/\s*", " - ", v) for k, v in fields_for(item, key_format).items()}
+def target_path(item: LibraryItem, target_root: Path, template: str, key_format: str = "camelot",
+                label_fallback: str = "") -> Path:
+    fields = {k: re.sub(r"\s*/\s*", " - ", v) for k, v in fields_for(item, key_format, label_fallback).items()}
     rendered = template.format(**fields)
     parts = [sanitize(p) for p in rendered.split("/") if p.strip()] or ["_"]
     parts[-1] += ".mp3"
     return target_root.joinpath(*parts)
 
 
-def assign_targets(items: list[LibraryItem], target_root: Path, template: str, key_format: str = "camelot") -> None:
+def assign_targets(items: list[LibraryItem], target_root: Path, template: str, key_format: str = "camelot",
+                   label_fallback: str = "") -> None:
     """Setzt item.target für alle aktiven Einträge und löst Namenskonflikte auf."""
     taken: set[Path] = set()
     for item in items:
         if not item.enabled:
             item.target = None
             continue
-        base = target_path(item, target_root, template, key_format)
+        base = target_path(item, target_root, template, key_format, label_fallback)
         candidate = base
         n = 2
         while candidate.as_posix().lower() in taken or (candidate.exists() and candidate.resolve() != item.local.path.resolve()):

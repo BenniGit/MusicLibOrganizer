@@ -31,10 +31,10 @@ class LocalTrack:
 
 
 @dataclass
-class BeatportTrack:
-    """Die für uns relevanten Felder eines Beatport-Tracks."""
+class TrackMeta:
+    """Metadaten eines Tracks aus einer Quelle (Beatport, Discogs, Bandcamp oder manuell)."""
 
-    id: int
+    id: str | int
     name: str
     mix: str
     artists: list[str]
@@ -51,6 +51,17 @@ class BeatportTrack:
     release_date: str = ""
     length_ms: int | None = None
     image_url: str = ""
+    source: str = "Beatport"
+    url: str = ""
+    edited: bool = False
+
+    @property
+    def key(self) -> tuple[str, str]:
+        return (self.source, str(self.id))
+
+    @property
+    def year(self) -> str:
+        return self.release_date[:4]
 
     @property
     def artist(self) -> str:
@@ -62,7 +73,8 @@ class BeatportTrack:
         return f"{self.artist} - {self.name}{mix}"
 
     @classmethod
-    def from_api(cls, d: dict) -> "BeatportTrack":
+    def from_api(cls, d: dict) -> "TrackMeta":
+        """Erzeugt die Metadaten aus einem Track-Objekt der Beatport-API v4."""
         release = d.get("release") or {}
         key = d.get("key") or {}
         camelot = ""
@@ -87,7 +99,12 @@ class BeatportTrack:
             release_date=d.get("new_release_date") or d.get("publish_date") or "",
             length_ms=d.get("length_ms"),
             image_url=image,
+            source="Beatport",
+            url=f"https://www.beatport.com/track/{d.get('slug') or '-'}/{d['id']}",
         )
+
+
+BeatportTrack = TrackMeta  # Rückwärtskompatibler Name
 
 
 class MatchStatus(str, Enum):
@@ -96,12 +113,13 @@ class MatchStatus(str, Enum):
     UNCERTAIN = "unsicher"
     NOT_FOUND = "nicht gefunden"
     ERROR = "Fehler"
+    MANUAL = "manuell"
     DONE = "erledigt"
 
 
 @dataclass
 class Candidate:
-    track: BeatportTrack
+    track: TrackMeta
     score: float
 
 
@@ -112,7 +130,7 @@ class LibraryItem:
     local: LocalTrack
     status: MatchStatus = MatchStatus.PENDING
     candidates: list[Candidate] = field(default_factory=list)
-    selected: BeatportTrack | None = None
+    selected: TrackMeta | None = None
     score: float = 0.0
     target: Path | None = None
     enabled: bool = True

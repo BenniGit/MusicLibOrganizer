@@ -8,7 +8,16 @@ from mutagen.id3 import (
     APIC, ID3, ID3NoHeaderError, TALB, TBPM, TCON, TDRC, TIT2, TKEY, TPE1, TPE4, TPUB, TSRC, TXXX, WOAF,
 )
 
-from .models import BeatportTrack
+from .models import TrackMeta
+
+
+# Camelot-Code -> Tonart (Schreibweise wie bei Beatport)
+CAMELOT_TO_KEY = {
+    "1A": "Ab Minor", "1B": "B Major", "2A": "Eb Minor", "2B": "F# Major", "3A": "Bb Minor", "3B": "Db Major",
+    "4A": "F Minor", "4B": "Ab Major", "5A": "C Minor", "5B": "Eb Major", "6A": "G Minor", "6B": "Bb Major",
+    "7A": "D Minor", "7B": "F Major", "8A": "A Minor", "8B": "C Major", "9A": "E Minor", "9B": "G Major",
+    "10A": "B Minor", "10B": "D Major", "11A": "F# Minor", "11B": "A Major", "12A": "Db Minor", "12B": "E Major",
+}
 
 
 @dataclass
@@ -18,19 +27,19 @@ class TagOptions:
     embed_cover: bool = True
 
 
-def format_key(track: BeatportTrack, key_format: str) -> str:
+def format_key(track: TrackMeta, key_format: str) -> str:
     if key_format == "camelot" and track.key_camelot:
         return track.key_camelot
     return track.key_name or track.key_camelot
 
 
-def format_title(track: BeatportTrack, mix_in_title: bool) -> str:
+def format_title(track: TrackMeta, mix_in_title: bool) -> str:
     if mix_in_title and track.mix:
         return f"{track.name} ({track.mix})"
     return track.name
 
 
-def write_tags(path: Path, track: BeatportTrack, opts: TagOptions, cover: bytes | None = None) -> None:
+def write_tags(path: Path, track: TrackMeta, opts: TagOptions, cover: bytes | None = None) -> None:
     try:
         tags = ID3(path)
     except ID3NoHeaderError:
@@ -54,9 +63,12 @@ def write_tags(path: Path, track: BeatportTrack, opts: TagOptions, cover: bytes 
     put(TXXX, track.mix, desc="MIX")
     put(TXXX, track.catalog_number, desc="CATALOGNUMBER")
     put(TXXX, track.sub_genre, desc="SUBGENRE")
-    put(TXXX, track.id, desc="BEATPORT_TRACK_ID")
+    if track.source in ("Beatport", "Discogs", "Bandcamp"):
+        put(TXXX, track.id, desc=f"{track.source.upper()}_ID" if track.source != "Beatport" else "BEATPORT_TRACK_ID")
+    put(TXXX, track.source, desc="METADATA_SOURCE")
     tags.delall("WOAF")
-    tags.add(WOAF(url=f"https://www.beatport.com/track/-/{track.id}"))
+    if track.url:
+        tags.add(WOAF(url=track.url))
 
     if opts.embed_cover and cover:
         tags.delall("APIC")

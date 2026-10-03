@@ -15,7 +15,7 @@ from urllib.parse import parse_qs, urlparse
 
 import requests
 
-from .models import BeatportTrack
+from .models import LocalTrack, TrackMeta
 
 API = "https://api.beatport.com/v4"
 REDIRECT_URI = f"{API}/auth/o/post-message/"
@@ -40,6 +40,8 @@ class BeatportError(RuntimeError):
 
 
 class BeatportClient:
+    name = "Beatport"
+
     def __init__(
         self,
         username: str | None = None,
@@ -185,13 +187,26 @@ class BeatportClient:
             return r.json()
         raise BeatportError(f"GET {path}: zu viele Wiederholungen")
 
-    def search_tracks(self, query: str, per_page: int = 10) -> list[BeatportTrack]:
+    def search_tracks(self, query: str, per_page: int = 10) -> list[TrackMeta]:
         data = self._get("/catalog/search/", {"q": query, "type": "tracks", "per_page": per_page})
-        return [BeatportTrack.from_api(t) for t in data.get("tracks", [])]
+        return [TrackMeta.from_api(t) for t in data.get("tracks", [])]
 
-    def tracks_by_isrc(self, isrc: str) -> list[BeatportTrack]:
+    def tracks_by_isrc(self, isrc: str) -> list[TrackMeta]:
         data = self._get("/catalog/tracks/", {"isrc": isrc, "per_page": 25})
-        return [BeatportTrack.from_api(t) for t in data.get("results", [])]
+        return [TrackMeta.from_api(t) for t in data.get("results", [])]
+
+    def search(self, local: LocalTrack) -> list[TrackMeta]:
+        """Sucht passende Tracks: zuerst über die ISRC, dann über Artist/Titel/Mix."""
+        from .matcher import build_query
+
+        found = self.tracks_by_isrc(local.isrc) if local.isrc else []
+        query = build_query(local)
+        if query:
+            found += self.search_tracks(query)
+        return found
+
+    def search_text(self, query: str) -> list[TrackMeta]:
+        return self.search_tracks(query, per_page=25)
 
     def download_image(self, dynamic_uri: str, size: int = 600) -> bytes | None:
         if not dynamic_uri:

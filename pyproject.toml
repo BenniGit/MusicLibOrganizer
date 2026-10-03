@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "musiclib-organizer"
-version = "0.1.0"
+version = "0.2.0"
 description = "Musikbibliothek mit Beatport-Metadaten taggen, zu MP3 320 kbit/s konvertieren und sortieren"
 requires-python = ">=3.10"
 dependencies = [
