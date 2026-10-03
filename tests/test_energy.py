@@ -31,6 +31,9 @@ def test_rating_and_location():
     assert [rating_to_stars(r) for r in (0, 51, 102, 153, 204, 255, None, "x")] == [0, 1, 2, 3, 4, 5, 0, 0]
     assert location_to_path("file://localhost/Users/ben/Music/a%20b%26c.mp3") == Path("/Users/ben/Music/a b&c.mp3")
     assert location_to_path("file://localhost/C:/Music/x.mp3").as_posix() == "C:/Music/x.mp3"
+    # '#' und '?' im Dateinamen dürfen den Pfad nicht abschneiden
+    assert location_to_path("file://localhost/Users/b/Library/#Sampler 1?.mp3") == Path("/Users/b/Library/#Sampler 1?.mp3")
+    assert location_to_path("file://localhost/Users/b/Various%20Artists%20Sampler%20%231.mp3").name == "Various Artists Sampler #1.mp3"
 
 
 def test_stars_from_folder_name():

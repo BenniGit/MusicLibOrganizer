@@ -5,7 +5,7 @@ import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
-from urllib.parse import unquote, urlsplit
+from urllib.parse import unquote
 
 
 @dataclass
@@ -21,8 +21,13 @@ class RbTrack:
 
 
 def location_to_path(location: str) -> Path:
-    """'file://localhost/Users/ben/Music/a%20b.mp3' -> /Users/ben/Music/a b.mp3 (Windows: C:/…)."""
-    path = unquote(urlsplit(location).path)
+    """'file://localhost/Users/ben/Music/a%20b.mp3' -> /Users/ben/Music/a b.mp3 (Windows: C:/…).
+
+    Bewusst ohne URL-Zerlegung: Rekordbox kodiert '#' und '?' in Dateinamen nicht immer,
+    eine URL-Bibliothek würde den Pfad dort abschneiden.
+    """
+    path = re.sub(r"^file://(localhost)?", "", location, flags=re.I)
+    path = unquote(path)
     if re.match(r"^/[A-Za-z]:/", path):  # Windows-Laufwerk
         path = path[1:]
     return Path(path)

@@ -111,7 +111,7 @@ def analyze_all(entries: list[Entry], workers: int, cache_path: Path) -> tuple[l
     errors: list[str] = []
     todo = []
     for i, e in enumerate(entries):
-        if not e.path.exists():
+        if not e.path.is_file():
             errors.append(f"nicht gefunden: {e.path}")
             continue
         key = _cache_key(e.path)
