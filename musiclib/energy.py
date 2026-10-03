@@ -213,9 +213,12 @@ class Evaluation:
 
 
 def evaluate(name: str, stars: np.ndarray, pred: np.ndarray) -> Evaluation:
-    pred = np.clip(np.rint(pred), 1, 5)
-    return Evaluation(name, float((pred == stars).mean()), float((np.abs(pred - stars) <= 1).mean()),
-                      float(np.abs(pred - stars).mean()), spearman(pred, stars))
+    """Trefferquoten auf gerundeten Sternen; die Rangkorrelation auf den ungerundeten Schätzungen,
+    damit feine Unterschiede (3,1 vs. 3,4) zählen."""
+    raw = np.asarray(pred, float)
+    rounded = np.clip(np.rint(raw), 1, 5)
+    return Evaluation(name, float((rounded == stars).mean()), float((np.abs(rounded - stars) <= 1).mean()),
+                      float(np.abs(rounded - stars).mean()), spearman(raw, stars))
 
 
 def cross_val_predict_tuned(X: np.ndarray, y: np.ndarray, alphas=(0.1, 1, 10, 100, 1000, 10000),

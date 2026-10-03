@@ -176,6 +176,10 @@ _AI_LOAD_SECONDS = 0.0
 def _init_ai_worker() -> None:
     """Lädt das Modell direkt beim Start des Arbeitsprozesses."""
     global _AI_LOAD_SECONDS
+    # TensorFlow schreibt trotz Einstellungen Meldungen direkt nach stderr – im Arbeitsprozess stummschalten.
+    # Fehler kommen weiterhin als Ausnahme beim Hauptprozess an.
+    devnull = os.open(os.devnull, os.O_WRONLY)
+    os.dup2(devnull, 2)
     from . import ai_energy
 
     _AI_LOAD_SECONDS = ai_energy.warmup()
@@ -200,6 +204,7 @@ def analyze_ai(entries: list[Entry], workers: int, cache_path: Path) -> tuple[di
     ai_energy.check_available()
     ai_energy.ensure_models()
     os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")  # wird an die Arbeitsprozesse vererbt
+    os.environ.setdefault("GLOG_minloglevel", "3")
     try:
         cache = json.loads(cache_path.read_text())
     except (OSError, ValueError):
@@ -352,11 +357,16 @@ def main(argv: list[str] | None = None) -> int:
         print("  (Gelernte Ansätze werden fair gemessen: jeder Track wird von einem Modell geschätzt, "
               "das ihn nicht kannte.)")
 
-        best_name = min(evals, key=lambda n: evals[n].mae)
+        # Bester = sortiert am besten (Rangkorrelation). Die Trefferquote allein würde ein Modell belohnen,
+        # das einfach immer den häufigsten Stern sagt.
+        best_name = max(evals, key=lambda n: np.nan_to_num(evals[n].spearman, nan=-1))
+        spread = stars_matching_distribution(candidates[best_name], ys.astype(int)).astype(float)
+        print(f"\nBester Ansatz (sortiert am besten): {best_name}")
+        print("Mit angepasster Verteilung – die Schätzungen werden so auf ★1–5 verteilt wie deine Sterne:")
+        print_eval(energy.evaluate("  … verteilt wie deine Sterne", ys, spread))
         best_pred = np.full(len(entries), np.nan)
-        best_pred[rated] = candidates[best_name]
-        print(f"\nBester Ansatz im Detail – {best_name}:")
-        confusion(ys.astype(int), best_pred[rated])
+        best_pred[rated] = spread
+        confusion(ys.astype(int), spread)
 
         print("\nWelche Werte hängen mit deinen Sternen zusammen (Rangkorrelation, ±1 = perfekt):")
         cols = [(energy.FEATURE_LABELS[f], X[rated][:, j]) for j, f in enumerate(energy.FEATURES)]
@@ -385,7 +395,8 @@ def main(argv: list[str] | None = None) -> int:
 
     with args.out.open("w", newline="", encoding="utf-8") as f:
         w = csv.writer(f, delimiter=";")
-        header = ["Track", "Datei", "Deine Sterne", "Ansatz 2 (ungelernt)", f"Bester gelernter Ansatz ({best_name or '–'})",
+        header = ["Track", "Datei", "Deine Sterne", "Ansatz 2 (ungelernt)",
+                  f"Bester gelernter Ansatz, verteilt wie deine Sterne ({best_name or '–'})",
                   *energy.FEATURES]
         if ai:
             header += [f"KI {h}" for h in heads]

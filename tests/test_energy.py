@@ -145,3 +145,10 @@ def test_cli_ki_report_with_fake_ai(tmp_path, monkeypatch, capsys):
     assert "Ansatz 5: KI-Fingerabdruck" in text and "KI: Aggressiv" in text and "5 von 15 Tracks" in text
     header = out.read_text(encoding="utf-8").splitlines()[0]
     assert "KI vocal" in header and "Bester gelernter Ansatz" in header
+
+
+def test_ranking_uses_unrounded_predictions():
+    stars = np.array([2, 3, 3, 4])
+    pred = np.array([2.9, 3.0, 3.1, 3.4])  # gerundet alles ★3, aber die Reihenfolge stimmt
+    ev = energy.evaluate("x", stars, pred)
+    assert ev.spearman > 0.9 and ev.exact == 0.5
