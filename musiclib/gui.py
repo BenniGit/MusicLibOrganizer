@@ -157,6 +157,14 @@ class MainWindow(QMainWindow):
         self.filter_combo.addItems(list(FILTERS))
         self.filter_combo.currentIndexChanged.connect(self.apply_filter)
         frow.addWidget(self.filter_combo)
+        for text, tip, fn in (
+                ("☑ Alle markieren", "Alle angezeigten Tracks markieren (Strg/⌘+Umschalt+A)", self.check_all),
+                ("☐ Keine markieren", "Markierung bei allen angezeigten Tracks entfernen (Strg/⌘+Umschalt+D)", self.check_none),
+                ("⇄ Umkehren", "Markierung bei allen angezeigten Tracks umkehren", self.check_invert)):
+            b = QPushButton(text)
+            b.setToolTip(tip)
+            b.clicked.connect(fn)
+            frow.addWidget(b)
         self.summary = QLabel("")
         frow.addWidget(self.summary, 1)
         hint = QLabel("Doppelklick: Treffer wählen oder URL einfügen · Rechtsklick: weitere Aktionen")
@@ -205,12 +213,15 @@ class MainWindow(QMainWindow):
         m.addAction(a)
 
         m = self.menuBar().addMenu("Auswahl")
-        for text, fn in (("Alle markieren", lambda: self.set_enabled(lambda i: True)),
-                         ("Keine markieren", lambda: self.set_enabled(lambda i: False)),
-                         ("Nur Bereite markieren", lambda: self.set_enabled(self.is_auto_ready)),
-                         ("Alle unsicheren Treffer bestätigen", self.confirm_all_uncertain)):
+        for text, fn, key in (("Alle angezeigten markieren", self.check_all, "Ctrl+Shift+A"),
+                              ("Keine markieren", self.check_none, "Ctrl+Shift+D"),
+                              ("Markierung umkehren", self.check_invert, None),
+                              ("Nur Bereite markieren", lambda: self.set_enabled(self.is_auto_ready), None),
+                              ("Alle unsicheren Treffer bestätigen", self.confirm_all_uncertain, None)):
             a = QAction(text, self)
             a.triggered.connect(fn)
+            if key:
+                a.setShortcut(QKeySequence(key))  # Ctrl = ⌘ auf dem Mac
             m.addAction(a)
 
         if self._username and self._password:
@@ -419,10 +430,22 @@ class MainWindow(QMainWindow):
         self.items[cell.row()].enabled = cell.checkState() == Qt.Checked
         self.refresh_targets()
 
-    def set_enabled(self, pred: Callable[[LibraryItem], bool]) -> None:
-        for i in self.items:
+    def set_enabled(self, pred: Callable[[LibraryItem], bool], visible_only: bool = True) -> None:
+        """Setzt die Markierung; standardmäßig nur für die gerade angezeigten (gefilterten) Zeilen."""
+        for row, i in enumerate(self.items):
+            if visible_only and self.table.isRowHidden(row):
+                continue
             i.enabled = i.status != MatchStatus.DONE and pred(i)
         self.refresh_targets()
+
+    def check_all(self) -> None:
+        self.set_enabled(lambda i: True)
+
+    def check_none(self) -> None:
+        self.set_enabled(lambda i: False)
+
+    def check_invert(self) -> None:
+        self.set_enabled(lambda i: not i.enabled)
 
     def confirm_all_uncertain(self) -> None:
         for i in self.items:

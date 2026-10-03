@@ -63,6 +63,7 @@ Hinweis: Auch Cue-Punkte von Serato/Traktor, die in Tags gespeichert sind, werde
   | Import-Monat / Genre | `2026-10/Techno/Charlotte de Witte - Doppler (Original Mix).mp3` |
   | Flach | `Charlotte de Witte - Doppler (Original Mix).mp3` |
 
+  Zielpfade werden bei Bedarf automatisch gekürzt (erst der Dateiname, dann die längsten Ordnernamen), damit der vollständige Pfad höchstens **255 Zeichen** lang ist – längere Pfade importiert Rekordbox nicht.
   Eigene Muster sind möglich mit `{artist}` `{albumartist}` `{title}` `{mix}` `{track}` `{disc}` `{album}` `{genre}` `{label}` `{catno}` `{year}` `{bpm}` `{key}` `{added}`; `/` erzeugt Unterordner, leere Ordnerebenen und überflüssige Trennzeichen werden entfernt. Außerdem: Kopieren oder Verschieben.
 - **Tags & Pflichtfelder** – Key-Format (Camelot/Tonart), Mix-Name im Titel, Cover, vorhandene Tags ersetzen (an/aus), welche Felder Pflicht sind (Standard: Artist, Titel, Album-Artist, Tracknummer, Album, Genre, Label, Jahr) und ein **Ersatz-Label** (Standard „Self-Released“) für Tracks ohne Label.
 - **Quellen** – Beatport-Zugang, Discogs-Token, Bandcamp an/aus, Schwellen für „gefunden“ und „100 %-Übernahme“.
