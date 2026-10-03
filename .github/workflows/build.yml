@@ -1,0 +1,55 @@
+name: Tests & Mac-App
+
+on:
+  push:
+    branches: [main, "claude/**"]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write  # zum Anlegen von Releases bei Tags
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - run: pip install -e ".[dev]"
+      - run: pytest -m "not live" -q
+
+  macos-app:
+    needs: test
+    runs-on: macos-14  # Apple Silicon
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Abhängigkeiten
+        run: pip install . pyinstaller
+      - name: App bauen
+        run: pyinstaller --noconfirm packaging/MusicLibOrganizer.spec
+      - name: Kurztest (App starten und beenden)
+        run: MUSICLIB_SMOKE_TEST=1 QT_QPA_PLATFORM=offscreen dist/MusicLibOrganizer.app/Contents/MacOS/MusicLibOrganizer
+      - name: DMG erstellen
+        run: |
+          VERSION=$(python -c "import musiclib; print(musiclib.__version__)")
+          mkdir -p dmg && cp -R dist/MusicLibOrganizer.app dmg/ && ln -s /Applications dmg/Programme
+          hdiutil create -volname "MusicLibOrganizer $VERSION" -srcfolder dmg -ov -format UDZO \
+            "MusicLibOrganizer-$VERSION-macOS-AppleSilicon.dmg"
+          echo "DMG=MusicLibOrganizer-$VERSION-macOS-AppleSilicon.dmg" >> "$GITHUB_ENV"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MusicLibOrganizer-macOS
+          path: ${{ env.DMG }}
+      - name: Release veröffentlichen (nur bei Versions-Tag)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.DMG }}
+          generate_release_notes: true

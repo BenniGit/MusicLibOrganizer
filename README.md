@@ -93,7 +93,22 @@ musiclib-energie --xml ~/Desktop/rekordbox.xml --playlist "tech house" --ki
 ``` Liegen die Dateien inzwischen woanders
 als im Export angegeben: `--path-map /Volumes/USB=/Users/ich/Music`.
 
-## Installation
+## Download (Mac-App)
+
+Die fertige App für Macs mit Apple Silicon (M1–M4) gibt es unter
+**[Releases](https://github.com/BenniGit/MusicLibOrganizer/releases)** als `.dmg`:
+
+1. DMG öffnen und `MusicLibOrganizer` in den Ordner „Programme“ ziehen.
+2. ffmpeg installieren (einmalig, für die FLAC/WAV-Konvertierung): `brew install ffmpeg`
+3. Beim ersten Start meldet macOS, dass der Entwickler nicht verifiziert werden kann (die App ist nicht bei Apple
+   signiert). Dann: **Systemeinstellungen → Datenschutz & Sicherheit → „Dennoch öffnen“**.
+   Alternativ im Terminal: `xattr -dr com.apple.quarantine /Applications/MusicLibOrganizer.app`
+4. Beatport-Zugang unter ⚙ Einstellungen → Quellen eintragen; das Passwort kann im Schlüsselbund gespeichert werden.
+
+Eine neue Version entsteht automatisch, sobald ein Versions-Tag (z. B. `v0.7.0`) gepusht wird.
+Das Test-Werkzeug `musiclib-energie` ist nicht in der App enthalten – dafür weiterhin die Installation unten.
+
+## Installation (für Entwicklung und das Test-Werkzeug)
 
 Voraussetzungen: Python ≥ 3.10 und [ffmpeg](https://ffmpeg.org/download.html) im `PATH`
 (Windows: `winget install ffmpeg`, macOS: `brew install ffmpeg`, Linux: Paketmanager).

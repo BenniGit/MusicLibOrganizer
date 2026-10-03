@@ -1,8 +1,10 @@
 """Konvertiert verlustfreie Formate (FLAC/WAV/AIFF) per ffmpeg zu MP3 320 kbit/s."""
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 
@@ -10,10 +12,27 @@ class ConversionError(RuntimeError):
     pass
 
 
+# Eine aus dem Finder gestartete Mac-App kennt den PATH der Shell nicht – typische Orte zusätzlich prüfen
+_EXTRA_DIRS = ("/opt/homebrew/bin", "/usr/local/bin", "/opt/local/bin", "/usr/bin")
+
+
+def find_ffmpeg() -> str | None:
+    candidates = [os.environ.get("MUSICLIB_FFMPEG")]
+    if getattr(sys, "frozen", False):  # mitgelieferte Kopie neben der App
+        candidates.append(str(Path(sys.executable).parent / "ffmpeg"))
+    candidates.append(shutil.which("ffmpeg"))
+    candidates += [str(Path(d) / "ffmpeg") for d in _EXTRA_DIRS]
+    for c in candidates:
+        if c and Path(c).is_file() and os.access(c, os.X_OK):
+            return c
+    return None
+
+
 def ffmpeg_path() -> str:
-    exe = shutil.which("ffmpeg")
+    exe = find_ffmpeg()
     if not exe:
-        raise ConversionError("ffmpeg wurde nicht gefunden. Bitte installieren und in den PATH aufnehmen.")
+        raise ConversionError("ffmpeg wurde nicht gefunden. Installation am Mac:  brew install ffmpeg  "
+                              "(oder den Pfad in der Umgebungsvariable MUSICLIB_FFMPEG angeben).")
     return exe
 
 

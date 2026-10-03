@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
 )
 
 from .manual import meta_from_local, split_number  # noqa: F401  (meta_from_local: Re-Export)
-from . import hashtags
+from . import credentials, hashtags
 from .matcher import rank
 from .urlimport import load_url, looks_like_url
 from .models import Candidate, LibraryItem, LocalTrack, TrackMeta
@@ -175,9 +175,14 @@ class SettingsDialog(QDialog):
         self.bp_user = QLineEdit(user)
         self.bp_password = QLineEdit(password)
         self.bp_password.setEchoMode(QLineEdit.Password)
-        self.bp_password.setPlaceholderText("wird nicht gespeichert")
         bf.addRow("Benutzername", self.bp_user)
         bf.addRow("Passwort", self.bp_password)
+        self.bp_remember = QCheckBox("Passwort sicher im Schlüsselbund speichern")
+        self.bp_remember.setChecked(credentials.keyring_available() and bool(password))
+        self.bp_remember.setEnabled(credentials.keyring_available())
+        if not credentials.keyring_available():
+            self.bp_remember.setToolTip("Kein Schlüsselbund verfügbar – das Passwort gilt nur bis zum Beenden.")
+        bf.addRow("", self.bp_remember)
         lay.addWidget(bp)
 
         dc = QGroupBox("Discogs")
@@ -288,6 +293,9 @@ class SettingsDialog(QDialog):
 
     def beatport_credentials(self) -> tuple[str, str]:
         return self.bp_user.text().strip(), self.bp_password.text()
+
+    def remember_password(self) -> bool:
+        return self.bp_remember.isChecked()
 
 
 # ---------------------------------------------------------------------------- Eigene #Tags

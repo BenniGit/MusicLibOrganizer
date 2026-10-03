@@ -18,7 +18,9 @@ from PySide6.QtWidgets import (
 
 from . import __version__
 from .backup import backup_dir
+from . import credentials
 from .bandcamp import BandcampClient
+from .converter import find_ffmpeg
 from .manual import as_unofficial
 from .soundcloud import SoundCloudClient
 from .beatport import BeatportClient
@@ -98,8 +100,8 @@ class MainWindow(QMainWindow):
         self.worker: Worker | None = None
         self._beatport: BeatportClient | None = None
         self._sources_cache: list | None = None
-        self._username = os.environ.get("BEATPORT_USERNAME", "")
-        self._password = os.environ.get("BEATPORT_PASSWORD", "")
+        self._username, self._password, self._cred_source = credentials.initial_credentials(
+            self.qsettings.value("beatport_user", ""))
         self._updating_table = False
 
         central = QWidget()
@@ -212,7 +214,12 @@ class MainWindow(QMainWindow):
             m.addAction(a)
 
         if self._username and self._password:
-            self.login_label.setText(f"Beatport: Zugangsdaten aus Umgebung ({self._username})")
+            self.login_label.setText(f"Beatport: Zugangsdaten aus {self._cred_source} ({self._username})")
+        elif not self._username:
+            self.login_label.setText("Beatport: Zugangsdaten unter ⚙ Einstellungen → Quellen eintragen")
+        if find_ffmpeg() is None:
+            self.append_log("⚠ ffmpeg wurde nicht gefunden – FLAC/WAV können nicht konvertiert werden. "
+                            "Installation: brew install ffmpeg")
         self.update_buttons()
 
     # ------------------------------------------------------------ Hilfen
@@ -607,6 +614,12 @@ class MainWindow(QMainWindow):
             return
         self.settings = dlg.result_settings()
         user, pw = dlg.beatport_credentials()
+        self.qsettings.setValue("beatport_user", user)
+        if dlg.remember_password():
+            if not credentials.save_password(user, pw):
+                self.append_log("⚠ Passwort konnte nicht im Schlüsselbund gespeichert werden.")
+        else:
+            credentials.save_password(user, "")
         if (user, pw) != (self._username, self._password):
             self._username, self._password = user, pw
             self._beatport = None
@@ -759,6 +772,11 @@ def main() -> int:
         app.installTranslator(translator)
     win = MainWindow()
     win.show()
+    if os.environ.get("MUSICLIB_SMOKE_TEST"):  # für den automatischen Build-Test: starten und gleich beenden
+        from PySide6.QtCore import QTimer
+
+        print(f"MusicLibOrganizer {__version__} gestartet")
+        QTimer.singleShot(1500, app.quit)
     return app.exec()
 
 
