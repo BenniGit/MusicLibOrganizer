@@ -37,3 +37,10 @@ def test_settings_roundtrip_ignores_unknown_keys():
     s2 = AppSettings.from_json(json.dumps(data))
     assert s2 == s
     assert AppSettings.from_json("kaputt") == AppSettings()
+
+
+def test_old_default_template_is_migrated():
+    old = AppSettings(template="{albumartist}/{album} ({year}) - {label}/{track} - {artist} - {title} ({mix})")
+    assert AppSettings.from_json(old.to_json()).template == AppSettings().template
+    custom = AppSettings(template="{genre}/{title}")
+    assert AppSettings.from_json(custom.to_json()).template == "{genre}/{title}"
