@@ -13,12 +13,18 @@ from urllib.parse import urlsplit, urlunsplit
 
 import requests
 
+from . import http
 from .matcher import build_query
 from .models import LocalTrack, TrackMeta
 from .scanner import split_mix
 
 SEARCH_URL = "https://bandcamp.com/search"
-USER_AGENT = "Mozilla/5.0 (compatible; MusicLibOrganizer/0.2)"
+# Dieselbe Schnittstelle, die die Suchleiste auf bandcamp.com benutzt
+AUTOCOMPLETE_URL = "https://bandcamp.com/api/bcsearch_public_api/1/autocomplete_elastic"
+# Bandcamp blockt Anfragen, die nicht wie ein Browser aussehen
+USER_AGENT = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+              "(KHTML, like Gecko) Chrome/129.0 Safari/537.36")
+HEADERS = {"User-Agent": USER_AGENT, "Accept-Language": "en-US,en;q=0.9"}
 
 _ITEMURL_RE = re.compile(r'<div class="itemurl">\s*<a href="([^"]+)"', re.I)
 _HEADING_RE = re.compile(r'<div class="heading">\s*<a href="([^"]+)"', re.I)
@@ -116,28 +122,78 @@ def parse_track_page(page: str, url: str) -> TrackMeta | None:
     return None
 
 
+def parse_autocomplete(data: dict, limit: int = 5) -> list[dict]:
+    """Track-Treffer aus der JSON-Antwort der Bandcamp-Suche: [{url, name, artist, album, image}]."""
+    out = []
+    for r in ((data or {}).get("auto") or {}).get("results") or []:
+        if r.get("type") != "t":
+            continue
+        url = r.get("item_url_path") or r.get("url") or ""
+        if url.startswith("/"):
+            url = (r.get("item_url_root") or "").rstrip("/") + url
+        if "/track/" not in url:
+            continue
+        out.append({"url": _strip_query(url), "name": r.get("name") or "", "artist": r.get("band_name") or "",
+                    "album": r.get("album_name") or "", "image": r.get("img") or ""})
+    return out[:limit]
+
+
 class BandcampClient:
     name = "Bandcamp"
 
-    def __init__(self, session: requests.Session | None = None, timeout: float = 30, max_results: int = 3):
+    def __init__(self, session: requests.Session | None = None, timeout: float = 30, max_results: int = 3,
+                 backoff: float = 1.0):
         self.session = session or requests.Session()
         self.timeout = timeout
         self.max_results = max_results
+        self.backoff = backoff
+        self.breaker = http.CircuitBreaker("Bandcamp")
 
-    def _fetch(self, url: str, params: dict | None = None) -> str:
+    def _request(self, method: str, url: str, **kwargs) -> requests.Response:
         try:
-            r = self.session.get(url, params=params, headers={"User-Agent": USER_AGENT}, timeout=self.timeout)
+            self.breaker.check()
+        except http.SourceDown as e:
+            raise BandcampError(str(e)) from e
+        try:
+            r = http.request(self.session, method, url, headers=HEADERS, timeout=self.timeout,
+                             backoff=self.backoff, **kwargs)
         except requests.RequestException as e:
+            self.breaker.failure()
             raise BandcampError(f"nicht erreichbar ({type(e).__name__})") from e
+        if r.status_code in http.RETRY_STATUS:
+            self.breaker.failure()
+        else:
+            self.breaker.success()
         if r.status_code != 200:
-            raise BandcampError(f"Bandcamp {url} -> {r.status_code}")
-        return r.text
+            raise BandcampError(http.describe(r.status_code, r.text))
+        return r
+
+    def _find(self, query: str) -> list[dict]:
+        """Sucht Tracks – zuerst über die JSON-Schnittstelle, sonst über die Suchseite."""
+        try:
+            r = self._request("POST", AUTOCOMPLETE_URL, json={
+                "search_text": query, "search_filter": "t", "full_page": False, "fan_id": None})
+            hits = parse_autocomplete(r.json(), self.max_results)
+            if hits:
+                return hits
+        except (BandcampError, ValueError):
+            pass
+        page = self._request("GET", SEARCH_URL, params={"q": query, "item_type": "t"}).text
+        return [{"url": u} for u in parse_search(page, self.max_results)]
 
     def search_text(self, query: str) -> list[TrackMeta]:
-        page = self._fetch(SEARCH_URL, {"q": query, "item_type": "t"})
         out = []
-        for url in parse_search(page, self.max_results):
-            meta = parse_track_page(self._fetch(url), url)
+        for hit in self._find(query):
+            try:
+                meta = parse_track_page(self._request("GET", hit["url"]).text, hit["url"])
+            except BandcampError:
+                meta = None
+            if meta is None and hit.get("name"):
+                # Track-Seite nicht lesbar: wenigstens die Daten aus der Suche verwenden
+                name, mix = split_mix(hit["name"])
+                meta = TrackMeta(id=hit["url"], name=name, mix=mix, artists=[hit["artist"]] if hit.get("artist") else [],
+                                 release=hit.get("album", ""), image_url=hit.get("image", ""), source="Bandcamp",
+                                 url=hit["url"], album_artist=hit.get("artist", ""), enriched=True)
             if meta:
                 out.append(meta)
         return out
@@ -150,7 +206,7 @@ class BandcampClient:
         if not url:
             return None
         try:
-            r = self.session.get(url, headers={"User-Agent": USER_AGENT}, timeout=self.timeout)
+            r = self.session.get(url, headers=HEADERS, timeout=self.timeout)
         except requests.RequestException:
             return None
         return r.content if r.status_code == 200 else None

@@ -1,6 +1,8 @@
 import json
 
-from musiclib.bandcamp import BandcampClient, parse_date, parse_duration, parse_search, parse_track_page
+from musiclib.bandcamp import (
+    BandcampClient, parse_autocomplete, parse_date, parse_duration, parse_search, parse_track_page,
+)
 
 SEARCH_HTML = """
 <ul class="result-items">
@@ -55,18 +57,61 @@ def test_self_release_has_no_label():
 
 
 class Resp:
-    def __init__(self, text):
-        self.text, self.status_code = text, 200
+    def __init__(self, text="", status=200, data=None):
+        self.text, self.status_code, self._data, self.headers = text, status, data, {}
+
+    def json(self):
+        if self._data is None:
+            raise ValueError("no json")
+        return self._data
+
+
+AUTOCOMPLETE = {"auto": {"results": [
+    {"type": "b", "name": "Some Artist", "item_url_root": "https://someartist.bandcamp.com"},
+    {"type": "t", "name": "Deep Song", "band_name": "Some Artist", "album_name": "Deep EP",
+     "item_url_path": "https://someartist.bandcamp.com/track/deep-song?from=search", "img": "https://img/1.jpg"},
+]}}
 
 
 class FakeSession:
+    def __init__(self, autocomplete_status=200, track_status=200):
+        self.autocomplete_status, self.track_status = autocomplete_status, track_status
+        self.calls = []
+
+    def post(self, url, json=None, headers=None, timeout=None):
+        self.calls.append(("POST", url))
+        assert "Mozilla" in headers["User-Agent"]
+        assert json["search_filter"] == "t"
+        return Resp(status=self.autocomplete_status, data=AUTOCOMPLETE)
+
     def get(self, url, params=None, headers=None, timeout=None):
+        self.calls.append(("GET", url))
         if url == "https://bandcamp.com/search":
             assert params["item_type"] == "t"
             return Resp(SEARCH_HTML)
-        return Resp(track_page())
+        return Resp(track_page(), status=self.track_status)
 
 
-def test_client_search_text():
-    results = BandcampClient(session=FakeSession()).search_text("some artist deep song")
+def test_parse_autocomplete():
+    assert parse_autocomplete(AUTOCOMPLETE) == [{"url": "https://someartist.bandcamp.com/track/deep-song",
+                                                 "name": "Deep Song", "artist": "Some Artist", "album": "Deep EP",
+                                                 "image": "https://img/1.jpg"}]
+
+
+def test_client_search_text_via_json_api():
+    s = FakeSession()
+    results = BandcampClient(session=s, backoff=0).search_text("some artist deep song")
+    assert [(t.name, t.mix, t.label) for t in results] == [("Deep Song", "Extended Mix", "Some Label")]
+    assert ("GET", "https://bandcamp.com/search") not in s.calls
+
+
+def test_falls_back_to_search_page_when_api_blocked():
+    s = FakeSession(autocomplete_status=403)
+    results = BandcampClient(session=s, backoff=0).search_text("x")
     assert [t.name for t in results] == ["Deep Song"]
+    assert ("GET", "https://bandcamp.com/search") in s.calls
+
+
+def test_unreadable_track_page_uses_search_data():
+    results = BandcampClient(session=FakeSession(track_status=403), backoff=0).search_text("x")
+    assert [(t.name, t.artist, t.release) for t in results] == [("Deep Song", "Some Artist", "Deep EP")]

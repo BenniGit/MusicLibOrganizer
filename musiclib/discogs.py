@@ -3,10 +3,10 @@ from __future__ import annotations
 
 import os
 import re
-import time
 
 import requests
 
+from . import http
 from .models import LocalTrack, TrackMeta
 from .scanner import split_mix
 
@@ -103,28 +103,38 @@ class DiscogsClient:
     name = "Discogs"
 
     def __init__(self, token: str | None = None, session: requests.Session | None = None,
-                 timeout: float = 30, max_releases: int = 3):
+                 timeout: float = 30, max_releases: int = 3, backoff: float = 1.0):
         self.token = token or os.environ.get("DISCOGS_TOKEN", "")
         self.session = session or requests.Session()
         self.timeout = timeout
         self.max_releases = max_releases
+        self.backoff = backoff
+        self.breaker = http.CircuitBreaker("Discogs")
         self._release_cache: dict[int, dict] = {}
 
     def _get(self, path: str, params: dict | None = None) -> dict:
         if not self.token:
             raise DiscogsError("Kein Discogs-Token hinterlegt (Einstellungen → Quellen).")
         headers = {"User-Agent": USER_AGENT, "Authorization": f"Discogs token={self.token}"}
-        for attempt in range(4):
-            r = self.session.get(f"{API}{path}", params=params, headers=headers, timeout=self.timeout)
-            if r.status_code == 429:  # 60 Anfragen pro Minute
-                time.sleep(float(r.headers.get("Retry-After", 2 ** (attempt + 1))))
-                continue
-            if r.status_code == 401:
-                raise DiscogsError("Discogs-Token ungültig.")
-            if r.status_code != 200:
-                raise DiscogsError(f"GET {path} -> {r.status_code}: {r.text[:200]}")
-            return r.json()
-        raise DiscogsError(f"GET {path}: zu viele Wiederholungen")
+        try:
+            self.breaker.check()
+        except http.SourceDown as e:
+            raise DiscogsError(str(e)) from e
+        try:
+            r = http.request(self.session, "GET", f"{API}{path}", params=params, headers=headers,
+                             timeout=self.timeout, backoff=self.backoff)
+        except requests.RequestException as e:
+            self.breaker.failure()
+            raise DiscogsError(f"nicht erreichbar ({type(e).__name__})") from e
+        if r.status_code in http.RETRY_STATUS:
+            self.breaker.failure()
+        else:
+            self.breaker.success()
+        if r.status_code == 401:
+            raise DiscogsError("Token ungültig – bitte in den Einstellungen prüfen.")
+        if r.status_code != 200:
+            raise DiscogsError(http.describe(r.status_code, r.text))
+        return r.json()
 
     def release(self, release_id: int) -> dict:
         if release_id not in self._release_cache:
@@ -133,8 +143,14 @@ class DiscogsClient:
 
     def _tracks_for_results(self, results: list[dict]) -> list[TrackMeta]:
         out: list[TrackMeta] = []
+        error: Exception | None = None
         for res in results[: self.max_releases]:
-            out += tracks_from_release(self.release(res["id"]))
+            try:
+                out += tracks_from_release(self.release(res["id"]))
+            except DiscogsError as e:  # ein kaputtes Release soll die anderen nicht verhindern
+                error = e
+        if not out and error:
+            raise error
         return out
 
     def search(self, local: LocalTrack) -> list[TrackMeta]:

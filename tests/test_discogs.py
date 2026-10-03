@@ -56,7 +56,8 @@ def test_self_released_has_no_label():
 
 class Resp:
     def __init__(self, data, status=200):
-        self._data, self.status_code, self.headers, self.text = data, status, {}, ""
+        self._data, self.status_code, self.headers = data, status, {}
+        self.text = data if isinstance(data, str) else ""
 
     def json(self):
         return self._data
@@ -89,6 +90,44 @@ def test_missing_token(monkeypatch):
     item = LibraryItem(LocalTrack(Path("x.mp3"), artist="A", title="B"))
     match_item(item, DiscogsClient(token="", session=FakeSession()))
     assert item.status == MatchStatus.ERROR and "Token" in item.message
+
+
+def test_retries_on_502_and_reports_readable_error():
+    class Flaky(FakeSession):
+        def __init__(self, fails):
+            super().__init__()
+            self.fails = fails
+
+        def get(self, url, params=None, headers=None, timeout=None):
+            if self.fails:
+                self.fails -= 1
+                return Resp("<!DOCTYPE html><html>This Page is Unavailable</html>", status=502)
+            return super().get(url, params, headers, timeout)
+
+    item = LibraryItem(LocalTrack(Path("x.mp3"), artist="Fisher", title="Losing It"))
+    match_item(item, DiscogsClient(token="tok", session=Flaky(2), backoff=0))
+    assert item.status == MatchStatus.MATCHED
+
+    item = LibraryItem(LocalTrack(Path("x.mp3"), artist="Fisher", title="Losing It"))
+    match_item(item, DiscogsClient(token="tok", session=Flaky(99), backoff=0))
+    assert item.status == MatchStatus.ERROR
+    assert "vorübergehend" in item.message and "502" in item.message and "<" not in item.message
+
+
+def test_source_is_skipped_after_repeated_outage():
+    class Down(FakeSession):
+        def get(self, url, params=None, headers=None, timeout=None):
+            self.urls.append(url)
+            return Resp("<html>down</html>", status=502)
+
+    s = Down()
+    client = DiscogsClient(token="tok", session=s, backoff=0)
+    for _ in range(2):
+        match_item(LibraryItem(LocalTrack(Path("x.mp3"), artist="A", title="B")), client)
+    calls = len(s.urls)
+    item = LibraryItem(LocalTrack(Path("x.mp3"), artist="A", title="B"))
+    match_item(item, client)
+    assert len(s.urls) == calls and "übersprungen" in item.message
 
 
 @pytest.mark.live

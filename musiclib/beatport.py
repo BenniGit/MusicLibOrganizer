@@ -16,6 +16,7 @@ from urllib.parse import parse_qs, urlparse
 
 import requests
 
+from . import http
 from .models import LocalTrack, TrackMeta
 
 API = "https://api.beatport.com/v4"
@@ -177,7 +178,11 @@ class BeatportClient:
     def _get(self, path: str, params: dict | None = None) -> dict:
         for attempt in range(4):
             headers = {"Authorization": f"Bearer {self.ensure_token()}"}
-            r = self.session.get(f"{API}{path}", params=params, headers=headers, timeout=self.timeout)
+            try:
+                r = http.request(self.session, "GET", f"{API}{path}", params=params, headers=headers,
+                                 timeout=self.timeout, retries=2)
+            except requests.RequestException as e:
+                raise BeatportError(f"nicht erreichbar ({type(e).__name__})") from e
             if r.status_code == 401 and attempt == 0:
                 self._token = None
                 if self.token_cache:
@@ -190,7 +195,7 @@ class BeatportClient:
                 time.sleep(float(r.headers.get("Retry-After", 2 ** attempt)))
                 continue
             if r.status_code != 200:
-                raise BeatportError(f"GET {path} -> {r.status_code}: {r.text[:200]}")
+                raise BeatportError(http.describe(r.status_code, r.text))
             return r.json()
         raise BeatportError(f"GET {path}: zu viele Wiederholungen")
 
