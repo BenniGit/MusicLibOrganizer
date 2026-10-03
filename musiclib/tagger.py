@@ -7,11 +7,12 @@ from pathlib import Path
 import mutagen
 from mutagen.apev2 import delete as delete_ape
 from mutagen.id3 import (
-    APIC, ID3, ID3NoHeaderError, TALB, TBPM, TCON, TDRC, TIT2, TKEY, TPE1, TPE2, TPE4, TPOS, TPUB, TRCK, TSRC,
+    APIC, COMM, ID3, ID3NoHeaderError, TALB, TBPM, TCON, TDRC, TIT2, TKEY, TPE1, TPE2, TPE4, TPOS, TPUB, TRCK, TSRC,
     TXXX, WOAF, Frame,
 )
 from mutagen.id3 import delete as delete_id3
 
+from . import hashtags
 from .models import TrackMeta
 
 
@@ -66,7 +67,9 @@ def kept_frames(src: Path, keys: set[str]) -> list[Frame]:
 
 
 def write_tags(path: Path, track: TrackMeta, opts: TagOptions, cover: bytes | None = None,
-               keep: list[Frame] | None = None) -> None:
+               keep: list[Frame] | None = None, comment_tags: list[str] | None = None) -> None:
+    """Schreibt die Metadaten. ``comment_tags`` (ohne '#') landen als '#tag #tag' im Kommentar;
+    None lässt Kommentare unverändert."""
     if opts.clean:
         delete_id3(path, delete_v1=True, delete_v2=True)
         try:
@@ -112,6 +115,15 @@ def write_tags(path: Path, track: TrackMeta, opts: TagOptions, cover: bytes | No
     tags.delall("WOAF")
     if track.url:
         tags.add(WOAF(url=track.url))
+
+    if comment_tags is not None:
+        # Behaltener Kommentartext bleibt erhalten, alte #Tags werden durch die aktuellen ersetzt
+        keep_text = " ".join(" ".join(map(str, f.text)) for f in tags.getall("COMM") if not f.desc)
+        for key in [k for k, f in tags.items() if k.startswith("COMM") and not f.desc]:
+            del tags[key]
+        text = hashtags.format_comment(comment_tags, keep_text)
+        if text:
+            tags.add(COMM(encoding=3, lang="eng", desc="", text=[text]))
 
     if opts.embed_cover and cover:
         tags.delall("APIC")

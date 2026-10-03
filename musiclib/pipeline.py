@@ -20,8 +20,12 @@ class ApplyOptions:
     backup_dir: Path | None = None  # None = Standardordner, siehe backup.py
 
 
-def apply_item(item: LibraryItem, opts: ApplyOptions, cover_loader: Callable[[TrackMeta], bytes | None] | None = None) -> str:
-    """Verarbeitet einen Eintrag und gibt eine kurze Beschreibung zurück."""
+def apply_item(item: LibraryItem, opts: ApplyOptions, cover_loader: Callable[[TrackMeta], bytes | None] | None = None,
+               tags: list[str] | None = None) -> str:
+    """Verarbeitet einen Eintrag und gibt eine kurze Beschreibung zurück.
+
+    ``tags``: eigene #Tags für den Kommentar (None = Kommentar nicht anfassen).
+    """
     src = item.local.path
     dst = item.target
     if dst is None:
@@ -55,7 +59,7 @@ def apply_item(item: LibraryItem, opts: ApplyOptions, cover_loader: Callable[[Tr
                 cover = cover_loader(meta)
             except Exception:
                 cover = None
-        write_tags(dst, meta, opts.tag, cover, keep)
+        write_tags(dst, meta, opts.tag, cover, keep, tags)
         actions.append("getaggt")
 
     if opts.move and item.local.needs_conversion and src.exists():

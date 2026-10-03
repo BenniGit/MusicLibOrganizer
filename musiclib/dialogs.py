@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import replace
 from pathlib import Path
 from typing import Callable
@@ -10,11 +11,13 @@ from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QApplication, QButtonGroup, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout,
-    QGridLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton, QRadioButton, QSpinBox,
+    QGridLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPlainTextEdit, QPushButton, QRadioButton,
+    QSpinBox,
     QTableWidget, QTableWidgetItem, QAbstractItemView, QHeaderView, QTabWidget, QVBoxLayout, QWidget,
 )
 
 from .manual import meta_from_local, split_number  # noqa: F401  (meta_from_local: Re-Export)
+from . import hashtags
 from .matcher import rank
 from .urlimport import load_url, looks_like_url
 from .models import Candidate, LibraryItem, LocalTrack, TrackMeta
@@ -39,6 +42,7 @@ class SettingsDialog(QDialog):
         lay.addWidget(tabs)
         tabs.addTab(self._folder_tab(settings), "Ordnerstruktur")
         tabs.addTab(self._tags_tab(settings), "Tags && Pflichtfelder")
+        tabs.addTab(self._hashtags_tab(settings), "Eigene Tags")
         tabs.addTab(self._sources_tab(settings, beatport_user, beatport_password), "Quellen")
         bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         bb.accepted.connect(self._accept)
@@ -134,6 +138,32 @@ class SettingsDialog(QDialog):
         lf.addRow("", note2)
         lay.addLayout(lf)
         lay.addStretch()
+        return w
+
+    def _hashtags_tab(self, s: AppSettings) -> QWidget:
+        w = QWidget()
+        lay = QVBoxLayout(w)
+        intro = QLabel(
+            "Rekordbox liest „My Tags“ nicht aus Dateien. Deshalb schreibt die App deine Tags als "
+            "<b>#Hashtags in den Kommentar</b>, z. B. <code>#peaktime #vocal</code>.<br>"
+            "In Rekordbox: Spalte „Kommentare“ einblenden, nach <code>#peaktime</code> suchen oder eine "
+            "<b>Intelligente Playlist</b> mit „Kommentare enthält #peaktime“ anlegen.<br>"
+            "Bei bereits importierten Tracks: Rechtsklick → Tag-Informationen neu laden.")
+        intro.setWordWrap(True)
+        intro.setTextFormat(Qt.RichText)
+        lay.addWidget(intro)
+        lay.addWidget(QLabel("Deine Tags – eine Gruppe pro Zeile, Format „Gruppe: Tag, Tag, Tag“:"))
+        self.tag_groups = QPlainTextEdit(hashtags.groups_to_text(s.tag_groups))
+        lay.addWidget(self.tag_groups, 1)
+        auto = QGroupBox("Automatische Tags")
+        al = QVBoxLayout(auto)
+        self.auto_unofficial = QCheckBox("Inoffizielle Tracks bekommen das Label für inoffizielle Tracks als Tag (z. B. #bootleg)")
+        self.auto_unofficial.setChecked(s.auto_tag_unofficial)
+        self.auto_subgenre = QCheckBox("Sub-Genre als Tag (z. B. #techtrance)")
+        self.auto_subgenre.setChecked(s.auto_tag_subgenre)
+        al.addWidget(self.auto_unofficial)
+        al.addWidget(self.auto_subgenre)
+        lay.addWidget(auto)
         return w
 
     def _sources_tab(self, s: AppSettings, user: str, password: str) -> QWidget:
@@ -246,6 +276,9 @@ class SettingsDialog(QDialog):
             required_fields=[k for k, cb in self.required_checks.items() if cb.isChecked()],
             label_fallback=self.label_fallback.text().strip(),
             unofficial_label=self.unofficial_label.text().strip(),
+            tag_groups=hashtags.parse_groups_text(self.tag_groups.toPlainText()),
+            auto_tag_unofficial=self.auto_unofficial.isChecked(),
+            auto_tag_subgenre=self.auto_subgenre.isChecked(),
             use_discogs=self.use_discogs.isChecked(),
             discogs_token=self.discogs_token.text().strip(),
             use_bandcamp=self.use_bandcamp.isChecked(),
@@ -255,6 +288,77 @@ class SettingsDialog(QDialog):
 
     def beatport_credentials(self) -> tuple[str, str]:
         return self.bp_user.text().strip(), self.bp_password.text()
+
+
+# ---------------------------------------------------------------------------- Eigene #Tags
+class TagPicker(QWidget):
+    """Häkchen für die eigenen Tags, gruppiert wie in den Einstellungen.
+
+    Mit ``tristate`` (für mehrere Tracks): ■ = bei allen setzen, ☐ = bei allen entfernen, ▣ = unverändert.
+    """
+
+    def __init__(self, groups: dict[str, list[str]], states: dict[str, Qt.CheckState], tristate: bool = False):
+        super().__init__()
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        self.checks: dict[str, QCheckBox] = {}
+        names = hashtags.display_names(groups)
+        unknown = [t for t in states if t not in names and states[t] != Qt.Unchecked]
+        all_groups = dict(groups)
+        if unknown:
+            all_groups["Sonstige (aus der Datei)"] = unknown
+        for group, tags in all_groups.items():
+            box = QGroupBox(group)
+            grid = QGridLayout(box)
+            for i, name in enumerate(tags):
+                tok = hashtags.token(name)
+                if tok in self.checks:
+                    continue
+                cb = QCheckBox(f"{name}  #{tok}" if tok != name else f"#{tok}")
+                cb.setTristate(tristate)
+                cb.setCheckState(states.get(tok, Qt.Unchecked))
+                self.checks[tok] = cb
+                grid.addWidget(cb, i // 3, i % 3)
+            lay.addWidget(box)
+        row = QHBoxLayout()
+        row.addWidget(QLabel("Weitere Tags:"))
+        self.extra = QLineEdit()
+        self.extra.setPlaceholderText("z. B. #festival #b2b (mit Leerzeichen oder Komma getrennt)")
+        row.addWidget(self.extra, 1)
+        lay.addLayout(row)
+
+    def _extra_tokens(self) -> list[str]:
+        return [t for t in (hashtags.token(p) for p in re.split(r"[\s,]+", self.extra.text())) if t]
+
+    def selected(self) -> list[str]:
+        return [t for t, cb in self.checks.items() if cb.checkState() == Qt.Checked] + self._extra_tokens()
+
+    def changes(self) -> tuple[set[str], set[str]]:
+        """(hinzufügen, entfernen) für den Mehrfach-Modus."""
+        add = {t for t, cb in self.checks.items() if cb.checkState() == Qt.Checked} | set(self._extra_tokens())
+        remove = {t for t, cb in self.checks.items() if cb.checkState() == Qt.Unchecked}
+        return add, remove
+
+
+class TagsDialog(QDialog):
+    """Tags für mehrere Tracks auf einmal setzen oder entfernen."""
+
+    def __init__(self, parent, groups: dict[str, list[str]], current: list[list[str]]):
+        super().__init__(parent)
+        self.setWindowTitle(f"Tags für {len(current)} Tracks")
+        lay = QVBoxLayout(self)
+        info = QLabel("☑ = bei allen setzen · ☐ = bei allen entfernen · ▣ = unverändert lassen")
+        lay.addWidget(info)
+        states: dict[str, Qt.CheckState] = {}
+        for tok in {t for tags in current for t in tags} | set(hashtags.display_names(groups)):
+            n = sum(tok in tags for tags in current)
+            states[tok] = Qt.Checked if n == len(current) else (Qt.Unchecked if n == 0 else Qt.PartiallyChecked)
+        self.picker = TagPicker(groups, states, tristate=True)
+        lay.addWidget(self.picker)
+        bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        bb.accepted.connect(self.accept)
+        bb.rejected.connect(self.reject)
+        lay.addWidget(bb)
 
 
 # ---------------------------------------------------------------------------- Treffer wählen
@@ -407,7 +511,7 @@ class MetadataDialog(QDialog):
     """Kleine Korrekturen vor dem Schreiben; zeigt die bisherigen Tags der Datei zum Übernehmen."""
 
     def __init__(self, parent, meta: TrackMeta, settings: AppSettings, local: LocalTrack | None = None,
-                 keep: set[str] | None = None):
+                 keep: set[str] | None = None, tags: list[str] | None = None):
         super().__init__(parent)
         self.setWindowTitle("Metadaten bearbeiten")
         self.resize(820, 0)
@@ -531,6 +635,13 @@ class MetadataDialog(QDialog):
         grid.setColumnStretch(1, 3)
         grid.setColumnStretch(2, 2)
 
+        tag_box = QGroupBox("Eigene Tags – landen als #Hashtags im Kommentar (in Rekordbox durchsuchbar)")
+        tl2 = QVBoxLayout(tag_box)
+        current = tags if tags is not None else (local.hashtags if local else [])
+        self.tag_picker = TagPicker(settings.tag_groups, {t: Qt.Checked for t in current})
+        tl2.addWidget(self.tag_picker)
+        lay.addWidget(tag_box)
+
         # Übrige vorhandene Tags (z. B. Kommentar, Komponist, Rating) zum Behalten anhaken
         self.extra_checks: dict[str, QCheckBox] = {}
         extra = [(k, label, v) for k, label, v in (local.raw_tags if local else [])
@@ -603,6 +714,9 @@ class MetadataDialog(QDialog):
             edited=True,
             enriched=True,
         )
+
+    def result_tags(self) -> list[str]:
+        return self.tag_picker.selected()
 
     def result_keep(self) -> set[str]:
         return {k for k, cb in self.extra_checks.items() if cb.isChecked()}

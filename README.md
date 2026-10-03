@@ -20,6 +20,16 @@ Beim Übernehmen werden FLAC/WAV/AIFF per ffmpeg zu **MP3 CBR 320 kbit/s** konve
 Artist, Titel (optional mit Mix), Album-Artist, Release/Album, Tracknummer (z. B. `3/12`), Disc, Label, Genre, BPM, Key, Release-Datum, ISRC, Remixer, Cover sowie als eigene Felder Mix-Name, Katalognummer, Sub-Genre, Quelle und Quellen-ID.
 Album-Artist und Tracknummer kommen aus dem Release (Beatport: eigene Abfrage pro Release, Compilations mit mehr als drei Artists werden zu „Various Artists“).
 
+### Eigene Tags für Rekordbox (#Hashtags im Kommentar)
+
+Rekordbox liest „My Tags“ nicht aus Dateien. Deshalb schreibt die App deine eigenen Tags als **#Hashtags in den Kommentar**, z. B. `#peaktime #vocal #bootleg`.
+In Rekordbox: Spalte „Kommentare“ einblenden, nach `#peaktime` suchen oder eine **Intelligente Playlist** mit „Kommentare enthält #peaktime“ anlegen. Bei bereits importierten Tracks nach Änderungen: Rechtsklick → Tag-Informationen neu laden.
+
+- Tags vergeben: im Metadaten-Editor oder per **Rechtsklick → Tags setzen…** (auch für viele Tracks auf einmal).
+- Tag-Liste in den Einstellungen → „Eigene Tags“ (eine Gruppe pro Zeile, z. B. `Situation: Warm-up, Peak Time, Closing`).
+- Automatische Tags: `#bootleg` für inoffizielle Tracks (an), Sub-Genre (aus).
+- Vorhandene #Tags im Kommentar einer Datei werden beim Scannen erkannt und übernommen.
+
 ### Vorhandene Tags
 
 Standardmäßig werden **alle vorhandenen Tags entfernt** (ID3v1, ID3v2, APE) und nur die neuen geschrieben. Vorher werden die alten Tags gesichert – eine JSON-Zeile pro Datei im App-Datenordner unter `tag-backups/`

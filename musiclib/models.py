@@ -24,6 +24,7 @@ class LocalTrack:
     old: dict[str, str] = field(default_factory=dict)
     # Alle vorhandenen Tags roh: (Schlüssel, Bezeichnung, Wert als Text)
     raw_tags: list[tuple[str, str, str]] = field(default_factory=list)
+    hashtags: list[str] = field(default_factory=list)  # #Tags aus dem bisherigen Kommentar
 
     @property
     def needs_conversion(self) -> bool:
@@ -151,3 +152,4 @@ class LibraryItem:
     enabled: bool = True
     message: str = ""
     keep_tags: set[str] = field(default_factory=set)  # vorhandene Tags, die erhalten bleiben sollen
+    tags: list[str] | None = None  # eigene #Tags; None = unverändert aus der Datei übernehmen
