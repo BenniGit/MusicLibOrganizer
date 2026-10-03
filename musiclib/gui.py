@@ -11,6 +11,7 @@ from PySide6.QtCore import QLibraryInfo, QLocale, QSettings, Qt, QThread, QTrans
 from PySide6.QtGui import QAction, QColor, QDesktopServices, QKeySequence
 from PySide6.QtWidgets import (
     QAbstractItemView, QApplication, QComboBox, QDialog, QFileDialog, QGridLayout, QHBoxLayout, QHeaderView,
+    QInputDialog,
     QLabel, QLineEdit, QMainWindow, QMenu, QMessageBox, QPlainTextEdit, QProgressBar, QPushButton, QSplitter,
     QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
@@ -22,6 +23,7 @@ from .beatport import BeatportClient
 from .dialogs import CandidateDialog, MetadataDialog, SettingsDialog, meta_from_local
 from .discogs import DiscogsClient
 from .matcher import enrich, match_item
+from .urlimport import assign_release, load_url, looks_like_url
 from .models import LibraryItem, MatchStatus
 from .organizer import assign_targets, validate_template
 from .pipeline import ApplyOptions, apply_item, make_cover_loader
@@ -153,7 +155,7 @@ class MainWindow(QMainWindow):
         frow.addWidget(self.filter_combo)
         self.summary = QLabel("")
         frow.addWidget(self.summary, 1)
-        hint = QLabel("Doppelklick: Treffer wählen · Rechtsklick: weitere Aktionen")
+        hint = QLabel("Doppelklick: Treffer wählen oder URL einfügen · Rechtsklick: weitere Aktionen")
         hint.setStyleSheet("color: gray")
         frow.addWidget(hint)
         root.addLayout(frow)
@@ -248,6 +250,19 @@ class MainWindow(QMainWindow):
                 out.append(BandcampClient())
             self._sources_cache = out
         return self._sources_cache
+
+    def url_clients(self) -> dict:
+        """Clients zum Laden per URL – auch für Quellen, die bei der Suche abgeschaltet sind."""
+        clients = {s.name: s for s in self.sources()}
+        if "Beatport" not in clients and self._username and self._password:
+            if self._beatport is None:
+                self._beatport = BeatportClient(self._username, self._password)
+            clients["Beatport"] = self._beatport
+        token = self.settings.discogs_token or os.environ.get("DISCOGS_TOKEN")
+        if "Discogs" not in clients and token:
+            clients["Discogs"] = DiscogsClient(token=token)
+        clients.setdefault("Bandcamp", BandcampClient())
+        return clients
 
     def save_settings(self) -> None:
         self.qsettings.setValue("source", self.src_edit.text())
@@ -432,11 +447,15 @@ class MainWindow(QMainWindow):
             row = rows[0]
             it = self.items[row]
             menu.addAction("Treffer wählen / suchen…", lambda: self.choose_match(row))
+            menu.addAction("Von URL übernehmen…", lambda: self.from_url(rows))
             menu.addAction("Metadaten bearbeiten…" if it.selected else "Metadaten manuell erfassen…",
                            lambda: self.edit_metadata(row))
             if it.selected and it.selected.url:
                 menu.addAction(f"Auf {it.selected.source} öffnen",
                                lambda: QDesktopServices.openUrl(QUrl(it.selected.url)))
+            menu.addSeparator()
+        if len(rows) > 1:
+            menu.addAction(f"Release-URL für {len(rows)} Tracks übernehmen…", lambda: self.from_url(rows))
             menu.addSeparator()
         if any(self.items[r].status == MatchStatus.UNCERTAIN for r in rows):
             menu.addAction("Treffer bestätigen", lambda: self._confirm_rows(rows))
@@ -458,7 +477,43 @@ class MainWindow(QMainWindow):
                 self.items[r].enabled = enabled
         self.refresh_targets()
 
-    def choose_match(self, row: int) -> None:
+    def from_url(self, rows: list[int]) -> None:
+        """Metadaten von einer Track-/Release-URL laden und den markierten Dateien zuordnen."""
+        clip = QApplication.clipboard().text().strip()
+        url, ok = QInputDialog.getText(
+            self, "Von URL übernehmen",
+            "URL eines Tracks oder Releases (Beatport, Discogs, Bandcamp):"
+            + ("\nBei mehreren Dateien wird jede dem passenden Track des Releases zugeordnet." if len(rows) > 1 else ""),
+            text=clip if looks_like_url(clip) else "")
+        url = url.strip()
+        if not ok or not url:
+            return
+        if len(rows) == 1:
+            self.choose_match(rows[0], url=url)
+            return
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            tracks = load_url(url, self.url_clients())
+        except Exception as e:
+            QApplication.restoreOverrideCursor()
+            QMessageBox.warning(self, "URL laden", str(e))
+            return
+        QApplication.restoreOverrideCursor()
+        items = [self.items[r] for r in rows]
+        pairs = assign_release(items, tracks)
+        for it, meta, s in pairs:
+            it.selected, it.score, it.status = meta, s, MatchStatus.MANUAL
+            it.message = f"von URL zugeordnet ({meta.source})"
+            it.enabled = True
+        self.refresh_targets()
+        assigned = {id(p[0]) for p in pairs}
+        missing = [it.local.path.name for it in items if id(it) not in assigned]
+        text = f"{len(pairs)} von {len(items)} Dateien wurden einem Track aus „{tracks[0].release if tracks else url}“ zugeordnet."
+        if missing:
+            text += "\n\nNicht zugeordnet (bitte einzeln per Doppelklick wählen):\n• " + "\n• ".join(missing)
+        QMessageBox.information(self, "Von URL übernehmen", text)
+
+    def choose_match(self, row: int, url: str = "") -> None:
         if self.busy():
             return
         item = self.items[row]
@@ -467,7 +522,10 @@ class MainWindow(QMainWindow):
         except Exception as e:
             QMessageBox.warning(self, "Quellen", str(e))
             return
-        dlg = CandidateDialog(self, item, lambda: sources, self.settings.match_threshold)
+        dlg = CandidateDialog(self, item, lambda: sources, self.settings.match_threshold,
+                              url_clients=self.url_clients, initial_query=url)
+        if url:
+            dlg.load_url(url)
         if dlg.exec() != QDialog.Accepted:
             return
         if dlg.result_action == "none":
@@ -626,7 +684,7 @@ class MainWindow(QMainWindow):
         opts = ApplyOptions(move=s.move, label_fallback=s.label_fallback,
                             tag=TagOptions(key_format=s.key_format, mix_in_title=s.mix_in_title,
                                            embed_cover=s.embed_cover, clean=s.clean_tags))
-        cover_loader = make_cover_loader(self.sources())
+        cover_loader = make_cover_loader(list(self.url_clients().values()))
 
         def job(w: Worker):
             ok = fail = 0

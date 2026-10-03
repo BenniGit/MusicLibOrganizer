@@ -65,7 +65,7 @@ class BeatportClient:
         self.timeout = timeout
         self._token: dict | None = None
         self._release_cache: dict[str, dict] = {}
-        self._release_tracks_cache: dict[str, list[str]] = {}
+        self._release_tracks_cache: dict[str, list[dict]] = {}
 
     # ------------------------------------------------------------------ auth
     def _discover_client_id(self) -> str:
@@ -231,17 +231,28 @@ class BeatportClient:
         Achtung: Das Feld ``tracks`` im Release-Objekt ist umgekehrt sortiert –
         die richtige Reihenfolge liefert nur dieser Endpunkt.
         """
+        return [str(t["id"]) for t in self._release_track_objects(release_id)]
+
+    def _release_track_objects(self, release_id: str) -> list[dict]:
         if release_id not in self._release_tracks_cache:
-            ids: list[str] = []
+            tracks: list[dict] = []
             page = 1
             while True:
                 data = self._get(f"/catalog/releases/{release_id}/tracks/", {"per_page": 100, "page": page})
-                ids += [str(t["id"]) for t in data.get("results", [])]
+                tracks += data.get("results", [])
                 if not data.get("next") or page >= 10:
                     break
                 page += 1
-            self._release_tracks_cache[release_id] = ids
+            self._release_tracks_cache[release_id] = tracks
         return self._release_tracks_cache[release_id]
+
+    def track(self, track_id: str) -> TrackMeta:
+        """Ein Track per Beatport-ID (z. B. aus einer Track-URL), inklusive Release-Details."""
+        return self.enrich(TrackMeta.from_api(self._get(f"/catalog/tracks/{track_id}/")))
+
+    def release_tracks(self, release_id: str) -> list[TrackMeta]:
+        """Alle Tracks eines Releases in Tracklisten-Reihenfolge (z. B. aus einer Release-URL)."""
+        return [self.enrich(TrackMeta.from_api(t)) for t in self._release_track_objects(str(release_id))]
 
     def enrich(self, meta: TrackMeta) -> TrackMeta:
         """Ergänzt Album-Artist, Tracknummer und Trackanzahl aus dem Release."""

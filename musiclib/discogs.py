@@ -141,6 +141,16 @@ class DiscogsClient:
             self._release_cache[release_id] = self._get(f"/releases/{release_id}")
         return self._release_cache[release_id]
 
+    def release_tracks(self, release_id: int | str) -> list[TrackMeta]:
+        return tracks_from_release(self.release(int(release_id)))
+
+    def master_tracks(self, master_id: int | str) -> list[TrackMeta]:
+        """Ein Master steht für alle Ausgaben eines Releases – wir nehmen die Hauptausgabe."""
+        master = self._get(f"/masters/{master_id}")
+        if not master.get("main_release"):
+            raise DiscogsError("Master ohne Haupt-Release")
+        return self.release_tracks(master["main_release"])
+
     def _tracks_for_results(self, results: list[dict]) -> list[TrackMeta]:
         out: list[TrackMeta] = []
         error: Exception | None = None

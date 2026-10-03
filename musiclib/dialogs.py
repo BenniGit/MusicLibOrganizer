@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
 )
 
 from .matcher import rank
+from .urlimport import load_url, looks_like_url
 from .models import Candidate, LibraryItem, LocalTrack, TrackMeta
 from .organizer import PLACEHOLDERS, target_path, validate_template
 from .settings import REQUIRED_FIELD_CHOICES, TEMPLATE_PRESETS, AppSettings
@@ -252,12 +253,14 @@ class SettingsDialog(QDialog):
 class CandidateDialog(QDialog):
     """Zeigt alle Treffer (alle Quellen) und erlaubt eine manuelle Suche."""
 
-    def __init__(self, parent, item: LibraryItem, sources: Callable[[], list], match_threshold: float):
+    def __init__(self, parent, item: LibraryItem, sources: Callable[[], list], match_threshold: float,
+                 url_clients: Callable[[], dict] | None = None, initial_query: str = ""):
         super().__init__(parent)
         self.setWindowTitle("Treffer wählen")
-        self.resize(980, 460)
+        self.resize(1100, 480)
         self.item = item
         self.sources = sources
+        self.url_clients = url_clients or (lambda: {s.name: s for s in sources()})
         self.match_threshold = match_threshold
         self.candidates: list[Candidate] = list(item.candidates)
         self.choice: Candidate | None = None
@@ -270,12 +273,15 @@ class CandidateDialog(QDialog):
         lay.addWidget(info)
 
         row = QHBoxLayout()
-        self.query = QLineEdit(" ".join(p for p in (loc.artist, loc.title, loc.mix) if p))
+        self.query = QLineEdit(initial_query or " ".join(p for p in (loc.artist, loc.title, loc.mix) if p))
+        self.query.setPlaceholderText("Suchbegriff – oder URL von Beatport, Discogs oder Bandcamp einfügen")
+        self.query.setToolTip("Statt eines Suchbegriffs kannst du eine Track- oder Release-URL einfügen "
+                              "(Beatport, Discogs, Bandcamp). Die Daten werden dann direkt von der Seite gelesen.")
         self.source_combo = QComboBox()
         self.source_combo.addItem("Alle Quellen", "")
         for src in sources():
             self.source_combo.addItem(src.name, src.name)
-        btn = QPushButton("Suchen")
+        btn = QPushButton("Suchen / URL laden")
         btn.clicked.connect(self.search)
         self.query.returnPressed.connect(self.search)
         row.addWidget(self.query, 1)
@@ -283,8 +289,9 @@ class CandidateDialog(QDialog):
         row.addWidget(btn)
         lay.addLayout(row)
 
-        self.table = QTableWidget(0, 9)
-        self.table.setHorizontalHeaderLabels(["Score", "Quelle", "Artist", "Titel", "Mix", "Label", "Genre", "Jahr", "BPM/Key"])
+        self.table = QTableWidget(0, 11)
+        self.table.setHorizontalHeaderLabels(["Score", "Quelle", "Artist", "Titel", "Mix", "Release", "Nr.", "Label",
+                                              "Genre", "Jahr", "BPM/Key"])
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SingleSelection)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -313,7 +320,8 @@ class CandidateDialog(QDialog):
         for row, c in enumerate(self.candidates):
             t = c.track
             key = t.key_camelot or t.key_name
-            vals = [f"{c.score:.0%}", t.source, t.artist, t.name, t.mix, t.label, t.genre, t.year,
+            nr = (f"{t.track_number}/{t.track_total}" if t.track_total else str(t.track_number)) if t.track_number else ""
+            vals = [f"{c.score:.0%}", t.source, t.artist, t.name, t.mix, t.release, nr, t.label, t.genre, t.year,
                     " / ".join(v for v in (str(t.bpm or ""), key) if v)]
             for col, v in enumerate(vals):
                 cell = QTableWidgetItem(v)
@@ -328,6 +336,9 @@ class CandidateDialog(QDialog):
     def search(self) -> None:
         q = self.query.text().strip()
         if not q:
+            return
+        if looks_like_url(q):
+            self.load_url(q)
             return
         wanted = self.source_combo.currentData()
         QApplication.setOverrideCursor(Qt.WaitCursor)
@@ -347,6 +358,18 @@ class CandidateDialog(QDialog):
             QApplication.restoreOverrideCursor()
         if errors:
             QMessageBox.warning(self, "Suche", "\n".join(errors))
+
+    def load_url(self, url: str) -> None:
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            tracks = load_url(url, self.url_clients())
+        except Exception as e:
+            QApplication.restoreOverrideCursor()
+            QMessageBox.warning(self, "URL laden", str(e))
+            return
+        QApplication.restoreOverrideCursor()
+        self.candidates = rank(self.item.local, tracks, self.match_threshold)
+        self._fill()
 
     def _current(self) -> Candidate | None:
         row = self.table.currentRow()

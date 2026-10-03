@@ -74,6 +74,63 @@ def _name(obj) -> str:
     return (obj or {}).get("name", "") if isinstance(obj, dict) else str(obj or "")
 
 
+def _ld_blocks(page: str) -> list[dict]:
+    out = []
+    for block in _LDJSON_RE.findall(page):
+        try:
+            data = json.loads(html.unescape(block))
+        except ValueError:
+            continue
+        out += data if isinstance(data, list) else [data]
+    return out
+
+
+def _label_for(artist: str, publisher: str) -> str:
+    # Veröffentlicht der Artist selbst, gibt es kein Label
+    return "" if not publisher or publisher.lower() == artist.lower() else publisher
+
+
+def _keywords(data: dict) -> list[str]:
+    keywords = data.get("keywords") or []
+    if isinstance(keywords, str):
+        keywords = [k.strip() for k in keywords.split(",")]
+    return keywords
+
+
+def parse_album_page(page: str, url: str) -> list[TrackMeta]:
+    """Liest alle Tracks einer Bandcamp-Album-Seite (JSON-LD 'MusicAlbum')."""
+    for data in _ld_blocks(page):
+        if data.get("@type") != "MusicAlbum":
+            continue
+        album_artist = _name(data.get("byArtist"))
+        label = _label_for(album_artist, _name(data.get("publisher")))
+        keywords = _keywords(data)
+        image = data.get("image") or ""
+        if isinstance(image, list):
+            image = image[0] if image else ""
+        tracklist = (data.get("track") or {}).get("itemListElement") or []
+        total = data.get("numTracks") if isinstance(data.get("numTracks"), int) else len(tracklist)
+        out = []
+        for i, entry in enumerate(tracklist, 1):
+            item = entry.get("item") or {}
+            name, mix = split_mix(item.get("name") or "")
+            artist = _name(item.get("byArtist")) or album_artist
+            track_url = item.get("@id") or url
+            out.append(TrackMeta(
+                id=track_url, name=name, mix=mix, artists=[artist] if artist else [],
+                release=data.get("name") or "", label=label,
+                genre=keywords[0].title() if keywords else "", sub_genre=", ".join(keywords[1:4]),
+                isrc=item.get("isrcCode") or "",
+                release_date=parse_date(data.get("datePublished") or ""),
+                length_ms=parse_duration(item.get("duration") or ""), image_url=image,
+                source="Bandcamp", url=track_url, album_artist=album_artist,
+                track_number=entry.get("position") if isinstance(entry.get("position"), int) else i,
+                track_total=total, enriched=True,
+            ))
+        return out
+    return []
+
+
 def parse_track_page(page: str, url: str) -> TrackMeta | None:
     """Liest die Track-Metadaten aus dem JSON-LD-Block einer Track-Seite."""
     for block in _LDJSON_RE.findall(page):
@@ -201,6 +258,18 @@ class BandcampClient:
     def search(self, local: LocalTrack) -> list[TrackMeta]:
         query = build_query(local)
         return self.search_text(query) if query else []
+
+    def from_url(self, url: str) -> list[TrackMeta]:
+        """Track- oder Album-Seite laden (funktioniert auch mit eigenen Domains der Künstler)."""
+        url = _strip_query(url)
+        page = self._request("GET", url).text
+        album = parse_album_page(page, url)
+        if album:
+            return album
+        meta = parse_track_page(page, url)
+        if meta is None:
+            raise BandcampError("auf der Seite wurden keine Track-Daten gefunden")
+        return [meta]
 
     def download_image(self, url: str) -> bytes | None:
         if not url:
