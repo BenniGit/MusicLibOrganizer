@@ -8,7 +8,9 @@ from .models import TrackMeta
 
 # Name -> Vorlage. "/" erzeugt Unterordner.
 TEMPLATE_PRESETS: dict[str, str] = {
-    "Album-Artist / Release (Jahr) [Label] (empfohlen)":
+    "Album-Artist / Jahr - Release [Label] (empfohlen)":
+        "{albumartist}/{year} - {album} [{label}]/{track} - {artist} - {title} ({mix})",
+    "Album-Artist / Release (Jahr) [Label]":
         "{albumartist}/{album} ({year}) [{label}]/{track} - {artist} - {title} ({mix})",
     "Album-Artist / Release (Jahr)": "{albumartist}/{album} ({year})/{track} - {artist} - {title} ({mix})",
     "Genre / Album-Artist / Release": "{genre}/{albumartist}/{album} ({year})/{track} - {artist} - {title} ({mix})",
@@ -17,9 +19,11 @@ TEMPLATE_PRESETS: dict[str, str] = {
     "Import-Monat / Genre": "{added}/{genre}/{artist} - {title} ({mix})",
     "Flach (alles in einem Ordner)": "{artist} - {title} ({mix})",
 }
-DEFAULT_TEMPLATE = TEMPLATE_PRESETS["Album-Artist / Release (Jahr) [Label] (empfohlen)"]
+DEFAULT_TEMPLATE = TEMPLATE_PRESETS["Album-Artist / Jahr - Release [Label] (empfohlen)"]
 # Frühere Fassungen der Standardvorlage, die beim Laden auf die aktuelle umgestellt werden
-_OLD_DEFAULTS = {"{albumartist}/{album} ({year}) - {label}/{track} - {artist} - {title} ({mix})"}
+_OLD_DEFAULTS = {
+    "{albumartist}/{album} ({year}) - {label}/{track} - {artist} - {title} ({mix})",
+}
 
 REQUIRED_FIELD_CHOICES: dict[str, str] = {
     "artist": "Artist",

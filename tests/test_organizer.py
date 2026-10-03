@@ -62,7 +62,7 @@ def test_release_template_with_track_number(bp_track, tmp_path):
     bp_track.album_artist, bp_track.track_number, bp_track.track_total = "Daft Punk", 3, 4
     item = LibraryItem(LocalTrack(tmp_path / "x.mp3"), selected=bp_track)
     assert target_path(item, tmp_path, DEFAULT_TEMPLATE).relative_to(tmp_path).as_posix() == \
-        "Daft Punk/One More Time (2000) [Daft Life]/03 - Daft Punk - One More Time (Extended Mix).mp3"
+        "Daft Punk/2000 - One More Time [Daft Life]/03 - Daft Punk - One More Time (Extended Mix).mp3"
 
 
 def test_release_template_without_track_number_or_album(tmp_path):
@@ -77,6 +77,11 @@ def test_unmatched_uses_old_tags(tmp_path):
                      old={"albumartist": "Various Artists", "track": "7/12", "date": "2019-01-01"})
     item = LibraryItem(loc)
     assert target_path(item, tmp_path, DEFAULT_TEMPLATE).relative_to(tmp_path).as_posix() == \
-        "Various Artists/EP (2019)/07 - A - Song.mp3"
+        "Various Artists/2019 - EP/07 - A - Song.mp3"
     assert target_path(item, tmp_path, DEFAULT_TEMPLATE, label_fallback="Self-Released").relative_to(tmp_path).as_posix() == \
-        "Various Artists/EP (2019) [Self-Released]/07 - A - Song.mp3"
+        "Various Artists/2019 - EP [Self-Released]/07 - A - Song.mp3"
+
+
+def test_missing_year_leaves_no_dangling_separator(tmp_path):
+    loc = LocalTrack(tmp_path / "x.mp3", artist="A", title="Song", album="EP")
+    assert target_path(LibraryItem(loc), tmp_path, DEFAULT_TEMPLATE).parent.name == "EP"
