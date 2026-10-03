@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from musiclib.models import BeatportTrack
+from musiclib.models import TrackMeta
 
 needs_ffmpeg = pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg nicht installiert")
 
@@ -25,7 +25,7 @@ def make_audio(path: Path, seconds: float = 1.0, **tags) -> Path:
 
 @pytest.fixture
 def bp_track():
-    return BeatportTrack(
+    return TrackMeta(
         id=123, name="One More Time", mix="Extended Mix", artists=["Daft Punk"], remixers=[],
         release="One More Time", label="Daft Life", catalog_number="CAT001", genre="House",
         sub_genre="", bpm=123, key_name="D Major", key_camelot="10B", isrc="GBDUW0000051",

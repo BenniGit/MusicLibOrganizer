@@ -20,6 +20,11 @@ class LocalTrack:
     album: str = ""
     isrc: str = ""
     duration_s: float | None = None
+    # Vorhandene Tags der Datei: Feldname -> Wert (für "alten Wert übernehmen")
+    old: dict[str, str] = field(default_factory=dict)
+    # Alle vorhandenen Tags roh: (Schlüssel, Bezeichnung, Wert als Text)
+    raw_tags: list[tuple[str, str, str]] = field(default_factory=list)
+    hashtags: list[str] = field(default_factory=list)  # #Tags aus dem bisherigen Kommentar
 
     @property
     def needs_conversion(self) -> bool:
@@ -31,10 +36,10 @@ class LocalTrack:
 
 
 @dataclass
-class BeatportTrack:
-    """Die für uns relevanten Felder eines Beatport-Tracks."""
+class TrackMeta:
+    """Metadaten eines Tracks aus einer Quelle (Beatport, Discogs, Bandcamp oder manuell)."""
 
-    id: int
+    id: str | int
     name: str
     mix: str
     artists: list[str]
@@ -51,10 +56,31 @@ class BeatportTrack:
     release_date: str = ""
     length_ms: int | None = None
     image_url: str = ""
+    source: str = "Beatport"
+    url: str = ""
+    edited: bool = False
+    album_artist: str = ""
+    track_number: int | None = None
+    track_total: int | None = None
+    disc_number: int | None = None
+    release_id: str = ""
+    enriched: bool = False  # Release-Details (Tracknummer, Album-Artist) geladen
+
+    @property
+    def key(self) -> tuple[str, str]:
+        return (self.source, str(self.id))
+
+    @property
+    def year(self) -> str:
+        return self.release_date[:4]
 
     @property
     def artist(self) -> str:
         return ", ".join(self.artists)
+
+    @property
+    def effective_album_artist(self) -> str:
+        return self.album_artist or self.artist
 
     @property
     def display(self) -> str:
@@ -62,7 +88,8 @@ class BeatportTrack:
         return f"{self.artist} - {self.name}{mix}"
 
     @classmethod
-    def from_api(cls, d: dict) -> "BeatportTrack":
+    def from_api(cls, d: dict) -> "TrackMeta":
+        """Erzeugt die Metadaten aus einem Track-Objekt der Beatport-API v4."""
         release = d.get("release") or {}
         key = d.get("key") or {}
         camelot = ""
@@ -87,7 +114,13 @@ class BeatportTrack:
             release_date=d.get("new_release_date") or d.get("publish_date") or "",
             length_ms=d.get("length_ms"),
             image_url=image,
+            source="Beatport",
+            url=f"https://www.beatport.com/track/{d.get('slug') or '-'}/{d['id']}",
+            release_id=str(release.get("id") or ""),
         )
+
+
+BeatportTrack = TrackMeta  # Rückwärtskompatibler Name
 
 
 class MatchStatus(str, Enum):
@@ -96,12 +129,13 @@ class MatchStatus(str, Enum):
     UNCERTAIN = "unsicher"
     NOT_FOUND = "nicht gefunden"
     ERROR = "Fehler"
+    MANUAL = "manuell"
     DONE = "erledigt"
 
 
 @dataclass
 class Candidate:
-    track: BeatportTrack
+    track: TrackMeta
     score: float
 
 
@@ -112,8 +146,10 @@ class LibraryItem:
     local: LocalTrack
     status: MatchStatus = MatchStatus.PENDING
     candidates: list[Candidate] = field(default_factory=list)
-    selected: BeatportTrack | None = None
+    selected: TrackMeta | None = None
     score: float = 0.0
     target: Path | None = None
     enabled: bool = True
     message: str = ""
+    keep_tags: set[str] = field(default_factory=set)  # vorhandene Tags, die erhalten bleiben sollen
+    tags: list[str] | None = None  # eigene #Tags; None = unverändert aus der Datei übernehmen
