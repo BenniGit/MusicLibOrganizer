@@ -67,6 +67,24 @@ Hinweis: Auch Cue-Punkte von Serato/Traktor, die in Tags gespeichert sind, werde
 - **Tags & Pflichtfelder** – Key-Format (Camelot/Tonart), Mix-Name im Titel, Cover, vorhandene Tags ersetzen (an/aus), welche Felder Pflicht sind (Standard: Artist, Titel, Album-Artist, Tracknummer, Album, Genre, Label, Jahr) und ein **Ersatz-Label** (Standard „Self-Released“) für Tracks ohne Label.
 - **Quellen** – Beatport-Zugang, Discogs-Token, Bandcamp an/aus, Schwellen für „gefunden“ und „100 %-Übernahme“.
 
+## Test-Werkzeug: Energie schätzen (experimentell)
+
+Misst bei jedem Track Hi-Hat/Percussion-Aktivität, Bewegung im Spektrum, Helligkeit, Bass-Anteil, Dynamik und BPM
+und schätzt daraus eine Energie von ★1–5. Mit deinen eigenen Sterne-Bewertungen zeigt es, wie gut das klappt.
+
+```bash
+# Rekordbox: Datei → Bibliothek exportieren → im XML-Format exportieren
+musiclib-energie --xml ~/Desktop/rekordbox.xml --list-playlists
+musiclib-energie --xml ~/Desktop/rekordbox.xml --playlist "Energie"     # mehrfach möglich
+# oder Ordner mit Unterordnern 1 … 5 (= Sterne):
+musiclib-energie --folder ~/Music/Energie-Test
+```
+
+Ausgabe: Trefferquote im Vergleich zu deinen Sternen (ungelernt vs. an deinen Sternen gelernt), welche Messwerte
+mit deinen Sternen zusammenhängen, die größten Ausreißer und eine CSV mit allen Messwerten (`energie-test.csv`).
+Messwerte werden zwischengespeichert – ein zweiter Lauf ist sofort fertig. Liegen die Dateien inzwischen woanders
+als im Export angegeben: `--path-map /Volumes/USB=/Users/ich/Music`.
+
 ## Installation
 
 Voraussetzungen: Python ≥ 3.10 und [ffmpeg](https://ffmpeg.org/download.html) im `PATH`
