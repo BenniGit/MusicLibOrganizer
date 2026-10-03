@@ -5,6 +5,8 @@
     musiclib reset PFAD... --backup-dir DIR --apply
                                                 sichern, Tags entfernen, prüfen
     musiclib restore PFAD... --backup-dir DIR   aus der Sicherung zurückholen
+    musiclib check-sources [--only discogs|beatport]
+                                                Verbindung zu Discogs/Beatport prüfen
 """
 
 from __future__ import annotations
@@ -86,6 +88,15 @@ def cmd_restore(args) -> int:
     return 1 if missing else 0
 
 
+def cmd_check_sources(args) -> int:
+    from .check_sources import run  # importiert requests erst bei Bedarf
+
+    checks = run(args.only)
+    for c in checks:
+        print(f"{'OK  ' if c.ok else 'FEHL'}  {c.name}: {c.detail}")
+    return 0 if all(c.ok for c in checks) else 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="musiclib", description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -107,6 +118,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("paths", nargs="+", type=Path)
     p.add_argument("--backup-dir", type=Path, required=True)
     p.set_defaults(func=cmd_restore)
+
+    p = sub.add_parser("check-sources", help="Verbindung zu Discogs und Beatport prüfen")
+    p.add_argument("--only", choices=["discogs", "beatport"])
+    p.set_defaults(func=cmd_check_sources)
     return parser
 
 

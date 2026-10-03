@@ -24,4 +24,12 @@ python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
 .venv/bin/musiclib restore ~/Nextcloud/Music/LibOrganized/Test --backup-dir ~/MusicBackup
 ```
 
+Verbindung zu den Quellen prüfen (liest `DISCOGS_TOKEN`, `BEATPORT_USERNAME`,
+`BEATPORT_PASSWORD` aus der Umgebung, gibt sie nie aus):
+
+```sh
+.venv/bin/musiclib check-sources                 # beide
+.venv/bin/musiclib check-sources --only beatport
+```
+
 Tests (brauchen `ffmpeg`): `.venv/bin/pytest`
