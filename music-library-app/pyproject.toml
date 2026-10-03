@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "musiclib"
+version = "0.1.0"
+description = "Hält eine MP3/FLAC-Sammlung sauber getaggt (Reset, Auto-Tagging, rekordbox)."
+requires-python = ">=3.11"
+dependencies = ["mutagen>=1.47"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+musiclib = "musiclib.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
