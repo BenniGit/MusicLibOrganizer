@@ -26,13 +26,17 @@ def detect(url: str) -> tuple[str, str, str]:
         return "Beatport", m.group(1).lower(), m.group(2)
     if m := _DISCOGS_RE.search(url):
         return "Discogs", m.group(1).lower(), m.group(2)
-    path = urlsplit(url).path
+    parts = urlsplit(url)
+    if parts.netloc.lower().endswith("soundcloud.com") or parts.netloc.lower() == "snd.sc":
+        kind = "set" if "/sets/" in parts.path else "track"
+        return "SoundCloud", kind, url
+    path = parts.path
     if "/track/" in path:
         return "Bandcamp", "track", url
     if "/album/" in path:
         return "Bandcamp", "album", url
     raise UrlImportError("Unbekannte URL. Unterstützt: Beatport (Track/Release), Discogs (Release/Master), "
-                         "Bandcamp (Track/Album).")
+                         "Bandcamp (Track/Album), SoundCloud (Track/Set).")
 
 
 def load_url(url: str, clients: dict) -> list[TrackMeta]:
@@ -46,7 +50,7 @@ def load_url(url: str, clients: dict) -> list[TrackMeta]:
         return [client.track(ident)] if kind == "track" else client.release_tracks(ident)
     if source == "Discogs":
         return client.master_tracks(ident) if kind == "master" else client.release_tracks(ident)
-    return client.from_url(ident)
+    return client.from_url(ident)  # Bandcamp, SoundCloud
 
 
 def assign_release(items: list[LibraryItem], tracks: list[TrackMeta],

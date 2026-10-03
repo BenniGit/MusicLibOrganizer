@@ -51,6 +51,7 @@ class AppSettings:
     clean_tags: bool = True
     required_fields: list[str] = field(default_factory=lambda: list(DEFAULT_REQUIRED))
     label_fallback: str = "Self-Released"
+    unofficial_label: str = "Bootleg"  # Label für inoffizielle Tracks (SoundCloud, Edits, Bootlegs)
     match_threshold: float = 0.85
     auto_threshold: float = 1.0
     use_discogs: bool = True

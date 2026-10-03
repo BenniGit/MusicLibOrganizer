@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QAbstractItemView, QHeaderView, QTabWidget, QVBoxLayout, QWidget,
 )
 
+from .manual import meta_from_local, split_number  # noqa: F401  (meta_from_local: Re-Export)
 from .matcher import rank
 from .urlimport import load_url, looks_like_url
 from .models import Candidate, LibraryItem, LocalTrack, TrackMeta
@@ -125,6 +126,12 @@ class SettingsDialog(QDialog):
                       "Dann wird dieser Text als Label eingetragen und das Pflichtfeld gilt als erfüllt.")
         note.setWordWrap(True)
         lf.addRow("", note)
+        self.unofficial_label = QLineEdit(s.unofficial_label)
+        lf.addRow("Label für inoffizielle Tracks", self.unofficial_label)
+        note2 = QLabel("Wird bei „Als inoffiziell erfassen“ und für SoundCloud-URLs ohne Label eingetragen "
+                       "(z. B. Bootleg, White Label, SoundCloud).")
+        note2.setWordWrap(True)
+        lf.addRow("", note2)
         lay.addLayout(lf)
         lay.addStretch()
         return w
@@ -238,6 +245,7 @@ class SettingsDialog(QDialog):
             clean_tags=self.clean_check.isChecked(),
             required_fields=[k for k, cb in self.required_checks.items() if cb.isChecked()],
             label_fallback=self.label_fallback.text().strip(),
+            unofficial_label=self.unofficial_label.text().strip(),
             use_discogs=self.use_discogs.isChecked(),
             discogs_token=self.discogs_token.text().strip(),
             use_bandcamp=self.use_bandcamp.isChecked(),
@@ -274,7 +282,7 @@ class CandidateDialog(QDialog):
 
         row = QHBoxLayout()
         self.query = QLineEdit(initial_query or " ".join(p for p in (loc.artist, loc.title, loc.mix) if p))
-        self.query.setPlaceholderText("Suchbegriff – oder URL von Beatport, Discogs oder Bandcamp einfügen")
+        self.query.setPlaceholderText("Suchbegriff – oder URL von Beatport, Discogs, Bandcamp oder SoundCloud einfügen")
         self.query.setToolTip("Statt eines Suchbegriffs kannst du eine Track- oder Release-URL einfügen "
                               "(Beatport, Discogs, Bandcamp). Die Daten werden dann direkt von der Seite gelesen.")
         self.source_combo = QComboBox()
@@ -395,14 +403,6 @@ MAPPED_OLD_KEYS = {"artist", "title", "mix", "remixers", "albumartist", "album",
                    "subgenre", "date", "bpm", "key", "isrc", "track", "disc"}
 
 
-def _split_number(value: str) -> tuple[int, int]:
-    """'7/12' -> (7, 12); '7' -> (7, 0)."""
-    parts = [p.strip() for p in value.split("/")]
-    num = int(parts[0]) if parts and parts[0].isdigit() else 0
-    total = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
-    return num, total
-
-
 class MetadataDialog(QDialog):
     """Kleine Korrekturen vor dem Schreiben; zeigt die bisherigen Tags der Datei zum Übernehmen."""
 
@@ -483,7 +483,7 @@ class MetadataDialog(QDialog):
             return lambda v: edit.setText(v)
 
         def set_track(v):
-            n, t = _split_number(v)
+            n, t = split_number(v)
             self.track.setValue(n)
             if t:
                 self.total.setValue(t)
@@ -615,26 +615,3 @@ class MetadataDialog(QDialog):
             self.missing.setText('<span style="color:#cf222e">Fehlende Pflichtfelder: ' + ", ".join(missing) + "</span>")
         else:
             self.missing.setText('<span style="color:#1a7f37">Alle Pflichtfelder ausgefüllt.</span>')
-
-
-def meta_from_local(local: LocalTrack) -> TrackMeta:
-    """Startpunkt für manuelle Erfassung: alle bisherigen Tags der Datei vorausgefüllt."""
-    old = local.old
-    num, total = _split_number(old.get("track", ""))
-    disc, _ = _split_number(old.get("disc", ""))
-    try:
-        bpm = round(float(old.get("bpm", "").replace(",", "."))) or None
-    except ValueError:
-        bpm = None
-    key = old.get("key", "").upper().replace(" ", "")
-    return TrackMeta(
-        id=str(local.path), name=local.title, mix=local.mix,
-        artists=[a.strip() for a in local.artist.split(",") if a.strip()] if local.artist else [],
-        remixers=[r.strip() for r in old.get("remixers", "").split(",") if r.strip()],
-        album_artist=old.get("albumartist", ""), release=local.album,
-        track_number=num or None, track_total=total or None, disc_number=disc or None,
-        label=old.get("label", ""), catalog_number=old.get("catno", ""), genre=old.get("genre", ""),
-        sub_genre=old.get("subgenre", ""), release_date=old.get("date", ""), isrc=local.isrc, bpm=bpm,
-        key_camelot=key if key in CAMELOT_TO_KEY else "", key_name=CAMELOT_TO_KEY.get(key, old.get("key", "")),
-        source="Manuell", enriched=True,
-    )

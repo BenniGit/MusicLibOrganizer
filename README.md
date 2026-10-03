@@ -31,8 +31,10 @@ Hinweis: Auch Cue-Punkte von Serato/Traktor, die in Tags gespeichert sind, werde
 ## Treffer prüfen und korrigieren
 
 - **Doppelklick** auf eine Zeile: alle Treffer aller Quellen ansehen, manuell suchen (auch gezielt nur in einer Quelle), im Browser öffnen, übernehmen.
-- **Per URL übernehmen**, wenn die Suche nichts findet: im Doppelklick-Fenster eine URL ins Suchfeld einfügen (statt eines Suchbegriffs) oder **Rechtsklick → Von URL übernehmen…**. Unterstützt werden Beatport (Track/Release), Discogs (Release/Master) und Bandcamp (Track/Album, auch mit eigener Domain).
+- **Per URL übernehmen**, wenn die Suche nichts findet: im Doppelklick-Fenster eine URL ins Suchfeld einfügen (statt eines Suchbegriffs) oder **Rechtsklick → Von URL übernehmen…**. Unterstützt werden Beatport (Track/Release), Discogs (Release/Master), Bandcamp (Track/Album, auch mit eigener Domain) und SoundCloud (Track/Set).
   Mehrere Dateien markieren und eine **Release-URL** angeben: jede Datei wird dem passenden Track des Releases zugeordnet – über Titel/Artist oder, bei Namen wie `01 track.wav`, über die Tracknummer.
+- **Inoffizielle Tracks** (Bootlegs, Edits, Free Downloads): **Rechtsklick → Als inoffiziell erfassen** – auch für viele Tracks auf einmal. Der Track wird als eigene Single behandelt: Album = Titel inkl. Mix, Tracknummer 1/1, Album-Artist = Artist, Label = „Bootleg“ (einstellbar), Jahr = Dateidatum. Mit einer SoundCloud-URL kommen Titel, Artist, Genre, Upload-Datum und Cover direkt von SoundCloud. Beispiel:
+  `Fisher/2023 - Losing It (Someone Bootleg) [Bootleg]/01 - Fisher - Losing It (Someone Bootleg).mp3`
 - **Rechtsklick → Metadaten bearbeiten…**: kleine Korrekturen (Genre, Label, Mix, Datum, Key …) vor dem Schreiben. Bei Tracks ohne Treffer lassen sich die Daten auch komplett manuell erfassen.
 - Die Spalte **Fehlt** zeigt fehlende Pflichtfelder; über **Anzeigen** lässt sich die Liste filtern (z. B. „Unvollständig“, „Unsicher“, „Bereit zur Übernahme“).
 

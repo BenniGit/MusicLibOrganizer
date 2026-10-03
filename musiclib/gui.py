@@ -19,6 +19,8 @@ from PySide6.QtWidgets import (
 from . import __version__
 from .backup import backup_dir
 from .bandcamp import BandcampClient
+from .manual import as_unofficial
+from .soundcloud import SoundCloudClient
 from .beatport import BeatportClient
 from .dialogs import CandidateDialog, MetadataDialog, SettingsDialog, meta_from_local
 from .discogs import DiscogsClient
@@ -262,6 +264,7 @@ class MainWindow(QMainWindow):
         if "Discogs" not in clients and token:
             clients["Discogs"] = DiscogsClient(token=token)
         clients.setdefault("Bandcamp", BandcampClient())
+        clients["SoundCloud"] = SoundCloudClient(default_label=self.settings.unofficial_label)
         return clients
 
     def save_settings(self) -> None:
@@ -457,6 +460,9 @@ class MainWindow(QMainWindow):
         if len(rows) > 1:
             menu.addAction(f"Release-URL für {len(rows)} Tracks übernehmen…", lambda: self.from_url(rows))
             menu.addSeparator()
+        menu.addAction("Als inoffiziell erfassen (Bootleg/Edit/SoundCloud)" + (f" – {len(rows)} Tracks" if len(rows) > 1 else ""),
+                       lambda: self.mark_unofficial(rows))
+        menu.addSeparator()
         if any(self.items[r].status == MatchStatus.UNCERTAIN for r in rows):
             menu.addAction("Treffer bestätigen", lambda: self._confirm_rows(rows))
         menu.addAction("Markieren", lambda: self._set_rows(rows, True))
@@ -482,7 +488,7 @@ class MainWindow(QMainWindow):
         clip = QApplication.clipboard().text().strip()
         url, ok = QInputDialog.getText(
             self, "Von URL übernehmen",
-            "URL eines Tracks oder Releases (Beatport, Discogs, Bandcamp):"
+            "URL eines Tracks oder Releases (Beatport, Discogs, Bandcamp, SoundCloud):"
             + ("\nBei mehreren Dateien wird jede dem passenden Track des Releases zugeordnet." if len(rows) > 1 else ""),
             text=clip if looks_like_url(clip) else "")
         url = url.strip()
@@ -512,6 +518,21 @@ class MainWindow(QMainWindow):
         if missing:
             text += "\n\nNicht zugeordnet (bitte einzeln per Doppelklick wählen):\n• " + "\n• ".join(missing)
         QMessageBox.information(self, "Von URL übernehmen", text)
+
+    def mark_unofficial(self, rows: list[int]) -> None:
+        """Füllt Album, Tracknummer, Label und Jahr für Tracks ohne offizielles Release vor."""
+        for r in rows:
+            it = self.items[r]
+            if it.status == MatchStatus.DONE:
+                continue
+            # Ein vorhandener Treffer wird nur weiterverwendet, wenn er bestätigt bzw. bearbeitet ist
+            base = it.selected if it.status == MatchStatus.MANUAL else None
+            it.selected = as_unofficial(it.local, base, self.settings.unofficial_label)
+            it.status, it.enabled = MatchStatus.MANUAL, True
+            it.message = "als inoffiziell erfasst"
+        self.refresh_targets()
+        if len(rows) == 1:
+            self.edit_metadata(rows[0])  # direkt prüfen/ergänzen, z. B. Genre
 
     def choose_match(self, row: int, url: str = "") -> None:
         if self.busy():
