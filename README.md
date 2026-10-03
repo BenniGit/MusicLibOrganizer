@@ -42,7 +42,8 @@ Hinweis: Auch Cue-Punkte von Serato/Traktor, die in Tags gespeichert sind, werde
 
   | Vorlage | Beispiel |
   |---|---|
-  | Album-Artist / Release (empfohlen) | `Charlotte de Witte/Formula EP (2021)/01 - Charlotte de Witte - Doppler (Original Mix).mp3` |
+  | Album-Artist / Release (Jahr) - Label (empfohlen) | `Charlotte de Witte/Formula EP (2021) - KNTXT/01 - Charlotte de Witte - Doppler (Original Mix).mp3` |
+  | Album-Artist / Release (Jahr) | `Charlotte de Witte/Formula EP (2021)/01 - Charlotte de Witte - Doppler (Original Mix).mp3` |
   | Genre / Album-Artist / Release | `Techno/Charlotte de Witte/Formula EP (2021)/01 - …` |
   | Label / Release | `KNTXT/[KNTXT010] Charlotte de Witte - Formula EP/01 - …` |
   | Genre (ein Ordner pro Genre) | `Techno/Charlotte de Witte - Doppler (Original Mix).mp3` |

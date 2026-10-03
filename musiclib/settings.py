@@ -8,14 +8,16 @@ from .models import TrackMeta
 
 # Name -> Vorlage. "/" erzeugt Unterordner.
 TEMPLATE_PRESETS: dict[str, str] = {
-    "Album-Artist / Release (empfohlen)": "{albumartist}/{album} ({year})/{track} - {artist} - {title} ({mix})",
+    "Album-Artist / Release (Jahr) - Label (empfohlen)":
+        "{albumartist}/{album} ({year}) - {label}/{track} - {artist} - {title} ({mix})",
+    "Album-Artist / Release (Jahr)": "{albumartist}/{album} ({year})/{track} - {artist} - {title} ({mix})",
     "Genre / Album-Artist / Release": "{genre}/{albumartist}/{album} ({year})/{track} - {artist} - {title} ({mix})",
     "Label / Release": "{label}/[{catno}] {albumartist} - {album}/{track} - {artist} - {title} ({mix})",
     "Genre (ein Ordner pro Genre)": "{genre}/{artist} - {title} ({mix})",
     "Import-Monat / Genre": "{added}/{genre}/{artist} - {title} ({mix})",
     "Flach (alles in einem Ordner)": "{artist} - {title} ({mix})",
 }
-DEFAULT_TEMPLATE = TEMPLATE_PRESETS["Album-Artist / Release (empfohlen)"]
+DEFAULT_TEMPLATE = TEMPLATE_PRESETS["Album-Artist / Release (Jahr) - Label (empfohlen)"]
 
 REQUIRED_FIELD_CHOICES: dict[str, str] = {
     "artist": "Artist",
