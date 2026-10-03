@@ -111,3 +111,37 @@ def test_cli_with_rekordbox_xml(tmp_path, monkeypatch, capsys):
     # zweiter Lauf kommt komplett aus dem Cache
     assert main(["--xml", str(xml), "--out", str(out), "--workers", "1"]) == 0
     assert "Analysiere" not in capsys.readouterr().out
+
+
+def test_tuned_cross_validation_handles_many_features():
+    rng = np.random.default_rng(1)
+    X = rng.normal(size=(80, 300))           # mehr Merkmale als sinnvoll lernbar
+    y = np.clip(np.rint(3 + X[:, 0]), 1, 5)  # nur ein Merkmal zählt
+    ev = energy.evaluate("x", y, energy.cross_val_predict_tuned(X, y))
+    assert ev.within_one > 0.8
+
+
+@needs_ffmpeg
+def test_cli_ki_report_with_fake_ai(tmp_path, monkeypatch, capsys):
+    """Auswertung mit --ki, ohne echtes Modell (die KI-Merkmale werden simuliert)."""
+    from musiclib import energy_cli
+
+    monkeypatch.setattr(energy_cli, "data_dir", lambda: tmp_path / "data")
+    rng = np.random.default_rng(0)
+    for i in range(15):
+        make_loop(tmp_path / str(1 + i % 5) / f"t{i}.wav", 1 + i % 5, 45)
+
+    def fake_ai(entries, workers, cache):
+        out = {}
+        for i, e in enumerate(entries):
+            out[i] = {"embedding": list(rng.normal(size=16) + e.stars), "engagement": e.stars / 5, "danceability": .9,
+                      "aggressive": e.stars / 6, "party": .5, "vocal": 0.8 if i % 3 == 0 else 0.1}
+        return out, []
+
+    monkeypatch.setattr(energy_cli, "analyze_ai", fake_ai)
+    out = tmp_path / "ki.csv"
+    assert main(["--folder", str(tmp_path), "--ki", "--out", str(out), "--workers", "2"]) == 0
+    text = capsys.readouterr().out
+    assert "Ansatz 5: KI-Fingerabdruck" in text and "KI: Aggressiv" in text and "5 von 15 Tracks" in text
+    header = out.read_text(encoding="utf-8").splitlines()[0]
+    assert "KI vocal" in header and "Bester gelernter Ansatz" in header

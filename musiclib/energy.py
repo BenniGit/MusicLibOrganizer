@@ -53,10 +53,10 @@ class Features:
 
 
 # ---------------------------------------------------------------------------- Audio
-def decode(path: str, start: float, duration: float) -> np.ndarray:
+def decode(path: str, start: float, duration: float, sr: int = SR) -> np.ndarray:
     """Mono-Ausschnitt als float32 über ffmpeg."""
     cmd = [ffmpeg_path(), "-hide_banner", "-loglevel", "error", "-ss", f"{start:.2f}", "-t", f"{duration:.2f}",
-           "-i", path, "-ac", "1", "-ar", str(SR), "-f", "f32le", "-"]
+           "-i", path, "-ac", "1", "-ar", str(sr), "-f", "f32le", "-"]
     out = subprocess.run(cmd, capture_output=True, check=True).stdout
     return np.frombuffer(out, dtype=np.float32)
 
@@ -216,3 +216,19 @@ def evaluate(name: str, stars: np.ndarray, pred: np.ndarray) -> Evaluation:
     pred = np.clip(np.rint(pred), 1, 5)
     return Evaluation(name, float((pred == stars).mean()), float((np.abs(pred - stars) <= 1).mean()),
                       float(np.abs(pred - stars).mean()), spearman(pred, stars))
+
+
+def cross_val_predict_tuned(X: np.ndarray, y: np.ndarray, alphas=(0.1, 1, 10, 100, 1000, 10000),
+                            folds: int = 5, seed: int = 0) -> np.ndarray:
+    """Wie cross_val_predict, wählt die Regularisierung aber in jedem Durchgang nur auf den Trainingsdaten
+    (verschachtelte Kreuzvalidierung) – nötig bei vielen Merkmalen wie dem 1280er KI-Fingerabdruck."""
+    n = len(y)
+    folds = max(2, min(folds, n))
+    order = np.random.default_rng(seed).permutation(n)
+    pred = np.zeros(n)
+    for k in range(folds):
+        test = order[k::folds]
+        train = np.setdiff1d(order, test)
+        best = min(alphas, key=lambda a: np.abs(cross_val_predict(X[train], y[train], 3, a, seed + 1) - y[train]).mean())
+        pred[test] = ridge_predict(ridge_fit(X[train], y[train], best), X[test])
+    return pred

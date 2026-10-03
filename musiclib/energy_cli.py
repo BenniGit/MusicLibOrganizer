@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import multiprocessing
 import os
 import re
 import sys
@@ -168,6 +169,61 @@ def confusion(stars: np.ndarray, pred: np.ndarray) -> None:
             print(f"  deine ★{s} ({sum(row):3d})   " + "".join(f"{n:4d} " for n in row))
 
 
+def _analyze_ai_one(path: str) -> dict:
+    from . import ai_energy
+
+    dur, _ = _duration_and_bpm(Path(path))
+    return ai_energy.analyze(path, dur)
+
+
+def analyze_ai(entries: list[Entry], workers: int, cache_path: Path) -> tuple[dict[int, dict], list[str]]:
+    """KI-Merkmale (Fingerabdruck + Einschätzungen) für alle Einträge, mit eigenem Cache."""
+    from . import ai_energy
+
+    ai_energy.check_available()
+    ai_energy.ensure_models()
+    os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")  # wird an die Arbeitsprozesse vererbt
+    try:
+        cache = json.loads(cache_path.read_text())
+    except (OSError, ValueError):
+        cache = {}
+    results: dict[int, dict] = {}
+    errors: list[str] = []
+    todo = []
+    for i, e in enumerate(entries):
+        key = _cache_key(e.path)
+        if key in cache:
+            results[i] = cache[key]
+        else:
+            todo.append((i, key))
+    if todo:
+        print(f"KI-Analyse von {len(todo)} Tracks ({len(results)} aus dem Cache) mit {workers} Prozessen …")
+        # "spawn": frische Prozesse, damit TensorFlow nicht in einem geforkten Prozess hängen bleibt
+        with ProcessPoolExecutor(max_workers=workers, mp_context=multiprocessing.get_context("spawn")) as ex:
+            futures = {ex.submit(_analyze_ai_one, str(entries[i].path)): (i, key) for i, key in todo}
+            for n, fut in enumerate(as_completed(futures), 1):
+                i, key = futures[fut]
+                try:
+                    results[i] = cache[key] = fut.result()
+                except Exception as e:
+                    errors.append(f"KI {entries[i].path.name}: {e}")
+                if n % 5 == 0 or n == len(todo):
+                    print(f"  {n}/{len(todo)}", end="\r", flush=True)
+                if n % 50 == 0:  # Zwischenstand sichern
+                    _save_json(cache_path, cache)
+        print()
+        _save_json(cache_path, cache)
+    return results, errors
+
+
+def _save_json(path: Path, data: dict) -> None:
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data))
+    except OSError:
+        pass
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="musiclib-energie", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -178,6 +234,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--list-playlists", action="store_true", help="Playlists im XML anzeigen und beenden")
     ap.add_argument("--path-map", action="append", default=[], metavar="ALT=NEU",
                     help="Pfade umschreiben, z. B. /Volumes/USB=/Users/ich/Music")
+    ap.add_argument("--ki", action="store_true",
+                    help="zusätzlich KI-Analyse (Essentia/Discogs-EffNet, benötigt: pip install essentia-tensorflow)")
+    ap.add_argument("--ki-workers", type=int, default=max(1, min(4, (os.cpu_count() or 2) - 1)),
+                    help="parallele Prozesse für die KI-Analyse (jeder lädt das Modell)")
     ap.add_argument("--limit", type=int, default=0, help="nur die ersten N Tracks (zum schnellen Ausprobieren)")
     ap.add_argument("--workers", type=int, default=max(1, (os.cpu_count() or 2) - 1))
     ap.add_argument("--out", type=Path, default=Path("energie-test.csv"), help="CSV mit allen Messwerten")
@@ -203,6 +263,17 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     entries, X, errors = analyze_all(entries, args.workers, data_dir() / "energy-cache.json")
+    ai: dict[int, dict] = {}
+    if args.ki:
+        try:
+            ai, ai_errors = analyze_ai(entries, args.ki_workers, data_dir() / "energy-ai-cache.json")
+        except Exception as e:  # Essentia fehlt, Modelle nicht ladbar …
+            print(f"⚠ KI-Analyse nicht möglich: {e}")
+            return 1
+        errors += ai_errors
+        keep = sorted(ai)
+        entries, X = [entries[i] for i in keep], X[keep]
+        ai = {n: ai[i] for n, i in enumerate(keep)}
     for e in errors[:10]:
         print("⚠", e)
     if len(errors) > 10:
@@ -211,40 +282,65 @@ def main(argv: list[str] | None = None) -> int:
         print("Zu wenige Tracks analysiert.")
         return 1
 
+    from .ai_energy import HEAD_LABELS, HEADS
+
+    heads = list(HEADS)
+    H = np.array([[ai[i][h] for h in heads] for i in range(len(entries))]) if ai else None
+    E = np.array([ai[i]["embedding"] for i in range(len(entries))]) if ai else None
+    bpm_col = X[:, energy.FEATURES.index("bpm")][:, None]
+
     stars = np.array([e.stars for e in entries])
     rated = stars > 0
     unsup = energy.unsupervised_scores(X)
     print(f"\n{len(entries)} Tracks analysiert, davon {rated.sum()} mit deinen Sternen.")
 
-    cv_pred = np.full(len(entries), np.nan)
     unsup_stars = energy.to_stars_by_quantile(unsup)
+    best_name, best_pred = "", np.full(len(entries), np.nan)
     if rated.sum() >= 10 and len(set(stars[rated])) >= 2:
-        ys, Xs = stars[rated].astype(float), X[rated]
+        ys = stars[rated].astype(float)
         dist = Counter(stars[rated].tolist())
         print("Deine Verteilung: " + "  ".join(f"★{s}: {dist.get(s, 0)}" for s in range(1, 6)))
         unsup_stars = np.zeros(len(entries), int)
         unsup_stars[rated] = stars_matching_distribution(unsup[rated], stars[rated])
-        unsup_stars[~rated] = energy.to_stars_by_quantile(unsup[~rated], unsup[rated]) if (~rated).any() else []
-        cv_pred[rated] = energy.cross_val_predict(Xs, ys)
+        if (~rated).any():
+            unsup_stars[~rated] = energy.to_stars_by_quantile(unsup[~rated], unsup[rated])
         most = max(dist, key=dist.get)
+
+        candidates = {"Ansatz 3: Messwerte, gelernt": energy.cross_val_predict(X[rated], ys)}
+        if ai:
+            candidates["Ansatz 4: KI-Einschätzungen + BPM, gelernt"] = energy.cross_val_predict(
+                np.hstack([H, bpm_col])[rated], ys)
+            print("Lerne auf dem KI-Fingerabdruck (1280 Merkmale) …")
+            candidates["Ansatz 5: KI-Fingerabdruck, gelernt"] = energy.cross_val_predict_tuned(
+                np.hstack([E, bpm_col])[rated], ys)
+            candidates["Ansatz 6: alles kombiniert, gelernt"] = energy.cross_val_predict_tuned(
+                np.hstack([E, H, X])[rated], ys)
 
         print("\nTrefferquote (je höher, desto besser):")
         print_eval(energy.evaluate(f"Zum Vergleich: immer ★{most}", ys, np.full(len(ys), most)))
-        print_eval(energy.evaluate("Ansatz 2: gemessen, ungelernt", ys, unsup_stars[rated]))
-        print_eval(energy.evaluate("Ansatz 3: an deinen Sternen gelernt", ys, cv_pred[rated]))
-        print("  (Ansatz 3 wird fair gemessen: jeder Track wird von einem Modell geschätzt, das ihn nicht kannte.)")
+        print_eval(energy.evaluate("Ansatz 2: Messwerte, ungelernt", ys, unsup_stars[rated]))
+        evals = {name: energy.evaluate(name, ys, pred) for name, pred in candidates.items()}
+        for ev in evals.values():
+            print_eval(ev)
+        print("  (Gelernte Ansätze werden fair gemessen: jeder Track wird von einem Modell geschätzt, "
+              "das ihn nicht kannte.)")
 
-        print("\nAnsatz 3 im Detail:")
-        confusion(ys.astype(int), cv_pred[rated])
+        best_name = min(evals, key=lambda n: evals[n].mae)
+        best_pred = np.full(len(entries), np.nan)
+        best_pred[rated] = candidates[best_name]
+        print(f"\nBester Ansatz im Detail – {best_name}:")
+        confusion(ys.astype(int), best_pred[rated])
 
-        print("\nWelche Messwerte hängen mit deinen Sternen zusammen (Rangkorrelation, ±1 = perfekt):")
-        corr = sorted(((energy.spearman(Xs[:, j], ys), f) for j, f in enumerate(energy.FEATURES)),
-                      key=lambda c: -abs(np.nan_to_num(c[0])))
-        for c, f in corr:
+        print("\nWelche Werte hängen mit deinen Sternen zusammen (Rangkorrelation, ±1 = perfekt):")
+        cols = [(energy.FEATURE_LABELS[f], X[rated][:, j]) for j, f in enumerate(energy.FEATURES)]
+        if ai:
+            cols += [(HEAD_LABELS[h], H[rated][:, j]) for j, h in enumerate(heads)]
+        corr = sorted(((energy.spearman(v, ys), label) for label, v in cols), key=lambda c: -abs(np.nan_to_num(c[0])))
+        for c, label in corr:
             bar = "█" * int(round(abs(np.nan_to_num(c)) * 20))
-            print(f"  {energy.FEATURE_LABELS[f]:<34} {c:+.2f} {bar}")
+            print(f"  {label:<34} {c:+.2f} {bar}")
 
-        miss = [(abs(round(p) - s), e, s, p) for e, s, p in zip(np.array(entries)[rated], ys, cv_pred[rated])]
+        miss = [(abs(round(p) - s), e, s, p) for e, s, p in zip(np.array(entries)[rated], ys, best_pred[rated])]
         miss = sorted((m for m in miss if m[0] >= 2), key=lambda m: -m[0])[:10]
         if miss:
             print("\nGrößte Ausreißer (lohnt sich anzuhören):")
@@ -255,12 +351,24 @@ def main(argv: list[str] | None = None) -> int:
         dist = Counter(unsup_stars.tolist())
         print("Geschätzte Verteilung: " + "  ".join(f"★{s}: {dist.get(s, 0)}" for s in range(1, 6)))
 
+    if ai:
+        vocal = H[:, heads.index("vocal")]
+        print(f"\nVocal-Erkennung: {int((vocal >= 0.5).sum())} von {len(vocal)} Tracks als „mit Vocals“ erkannt "
+              "(Spalte „KI vocal“ in der CSV, 0–1).")
+
     with args.out.open("w", newline="", encoding="utf-8") as f:
         w = csv.writer(f, delimiter=";")
-        w.writerow(["Track", "Datei", "Deine Sterne", "Ansatz 2 (ungelernt)", "Ansatz 3 (gelernt)", *energy.FEATURES])
-        for e, s, u, c, x in zip(entries, stars, unsup_stars, cv_pred, X):
-            w.writerow([e.label, str(e.path), s or "", u, "" if np.isnan(c) else int(np.clip(round(c), 1, 5)),
-                        *[f"{v:.4f}" for v in x]])
+        header = ["Track", "Datei", "Deine Sterne", "Ansatz 2 (ungelernt)", f"Bester gelernter Ansatz ({best_name or '–'})",
+                  *energy.FEATURES]
+        if ai:
+            header += [f"KI {h}" for h in heads]
+        w.writerow(header)
+        for i, (e, s, u, c, x) in enumerate(zip(entries, stars, unsup_stars, best_pred, X)):
+            row = [e.label, str(e.path), s or "", u, "" if np.isnan(c) else int(np.clip(round(c), 1, 5)),
+                   *[f"{v:.4f}" for v in x]]
+            if ai:
+                row += [f"{v:.3f}" for v in H[i]]
+            w.writerow(row)
     print(f"\nAlle Messwerte: {args.out.resolve()}")
     return 0
 

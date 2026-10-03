@@ -82,7 +82,15 @@ musiclib-energie --folder ~/Music/Energie-Test
 
 Ausgabe: Trefferquote im Vergleich zu deinen Sternen (ungelernt vs. an deinen Sternen gelernt), welche Messwerte
 mit deinen Sternen zusammenhängen, die größten Ausreißer und eine CSV mit allen Messwerten (`energie-test.csv`).
-Messwerte werden zwischengespeichert – ein zweiter Lauf ist sofort fertig. Liegen die Dateien inzwischen woanders
+Messwerte werden zwischengespeichert – ein zweiter Lauf ist sofort fertig.
+
+**Mit KI (`--ki`)**: zusätzlich ein KI-„Klang-Fingerabdruck“ (Essentia, Discogs-EffNet) und fertige KI-Einschätzungen
+(Engagement, Tanzbarkeit, Aggressivität, Party-Stimmung, Vocal-Anteil). Installation: `pip install -e ".[ki]"`
+(macOS 15+ bzw. Linux). Die Modelle (~20 MB) werden beim ersten Lauf von essentia.upf.edu geladen; alles läuft lokal.
+
+```bash
+musiclib-energie --xml ~/Desktop/rekordbox.xml --playlist "tech house" --ki
+``` Liegen die Dateien inzwischen woanders
 als im Export angegeben: `--path-map /Volumes/USB=/Users/ich/Music`.
 
 ## Installation
