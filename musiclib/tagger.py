@@ -127,6 +127,7 @@ def write_tags(path: Path, track: TrackMeta, opts: TagOptions, cover: bytes | No
 
     if opts.embed_cover and cover:
         tags.delall("APIC")
-        tags.add(APIC(encoding=3, mime="image/jpeg", type=3, desc="Cover", data=cover))
+        mime = "image/png" if cover.startswith(b"\x89PNG") else "image/jpeg"
+        tags.add(APIC(encoding=3, mime=mime, type=3, desc="Cover", data=cover))
 
     tags.save(path, v2_version=4, v1=0)

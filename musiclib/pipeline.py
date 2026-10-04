@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Callable
 
 from .converter import to_mp3
+from .covers import existing_cover
 from .models import LibraryItem, TrackMeta
 from .backup import backup_tags
 from .tagger import TagOptions, kept_frames, write_tags
@@ -75,6 +76,8 @@ def apply_item(item: LibraryItem, opts: ApplyOptions, cover_loader: Callable[[Tr
     actions = []
     # Vor dem Verschieben/Überschreiben: zu behaltende Tags lesen und alte Tags sichern
     keep = kept_frames(src, item.keep_tags) if item.selected else []
+    # Fallback, falls weder ein eigenes Cover noch eins von der Quelle kommt: das bisherige behalten
+    old_cover = existing_cover(src) if item.selected and opts.tag.embed_cover and item.cover is None else None
     if item.selected and opts.tag.clean:
         backup_tags(item.local, dst, opts.backup_dir)
 
@@ -93,13 +96,15 @@ def apply_item(item: LibraryItem, opts: ApplyOptions, cover_loader: Callable[[Tr
         meta = item.selected
         if not meta.label.strip() and opts.label_fallback.strip():
             meta = replace(meta, label=opts.label_fallback.strip())
-        cover = None
-        if opts.tag.embed_cover and cover_loader and meta.image_url:
+        cover = item.cover
+        if cover is None and opts.tag.embed_cover and cover_loader and meta.image_url:
             try:
                 cover = cover_loader(meta)
             except Exception:
                 cover = None
-        write_tags(dst, meta, opts.tag, cover, keep, tags)
+        cover = cover or old_cover
+        tag_opts = replace(opts.tag, embed_cover=True) if item.cover else opts.tag  # eigenes Cover immer einbetten
+        write_tags(dst, meta, tag_opts, cover, keep, tags)
         actions.append("getaggt")
 
     if opts.move and item.local.needs_conversion and src.exists():

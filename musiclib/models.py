@@ -25,6 +25,7 @@ class LocalTrack:
     # Alle vorhandenen Tags roh: (Schlüssel, Bezeichnung, Wert als Text)
     raw_tags: list[tuple[str, str, str]] = field(default_factory=list)
     hashtags: list[str] = field(default_factory=list)  # #Tags aus dem bisherigen Kommentar
+    has_cover: bool = False  # Datei hat schon ein eingebettetes Cover
 
     @property
     def needs_conversion(self) -> bool:
@@ -153,4 +154,5 @@ class LibraryItem:
     message: str = ""
     keep_tags: set[str] = field(default_factory=set)  # vorhandene Tags, die erhalten bleiben sollen
     tags: list[str] | None = None  # eigene #Tags; None = unverändert aus der Datei übernehmen
+    cover: bytes | None = None  # selbst gewähltes Cover (hat Vorrang vor dem Cover der Quelle)
     previous: Path | None = None  # frühere Version in der neuen Library, wird beim erneuten Bearbeiten ersetzt

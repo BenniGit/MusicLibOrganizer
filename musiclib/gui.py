@@ -34,6 +34,8 @@ from .models import LibraryItem, MatchStatus
 from .organizer import assign_targets, validate_template
 from .pipeline import ApplyOptions, apply_item, make_cover_loader
 from .releases import CONFLICT, harmonize
+from .release_dialog import ReleaseDialog
+from .release_edit import apply_release_edit
 from .scanner import scan
 from .settings import AppSettings, effective_meta, effective_tags, missing_fields
 from .tagger import TagOptions
@@ -49,9 +51,9 @@ STATUS_COLORS = {
 MISSING_COLOR = QColor(219, 171, 9, 80)
 
 COLUMNS = ["", "Status", "Quelle", "Datei", "Format", "Lokal erkannt", "Treffer", "Score", "Album-Artist", "Nr.",
-           "Genre", "Label", "Jahr", "BPM", "Key", "Tags", "Fehlt", "Ziel"]
+           "Genre", "Label", "Jahr", "BPM", "Key", "Tags", "Cover", "Fehlt", "Ziel"]
 (COL_CHECK, COL_STATUS, COL_SOURCE, COL_FILE, COL_FMT, COL_LOCAL, COL_MATCH, COL_SCORE, COL_ALBUMARTIST, COL_TRACK,
- COL_GENRE, COL_LABEL, COL_YEAR, COL_BPM, COL_KEY, COL_TAGS, COL_MISSING, COL_TARGET) = range(len(COLUMNS))
+ COL_GENRE, COL_LABEL, COL_YEAR, COL_BPM, COL_KEY, COL_TAGS, COL_COVER, COL_MISSING, COL_TARGET) = range(len(COLUMNS))
 
 FILTERS = {
     "Alle": lambda w, i: True,
@@ -191,7 +193,7 @@ class MainWindow(QMainWindow):
         for col, w in ((COL_CHECK, 28), (COL_STATUS, 95), (COL_SOURCE, 75), (COL_FILE, 200), (COL_FMT, 75),
                        (COL_LOCAL, 220), (COL_MATCH, 280), (COL_SCORE, 50), (COL_ALBUMARTIST, 120), (COL_TRACK, 45),
                        (COL_GENRE, 110), (COL_LABEL, 120),
-                       (COL_YEAR, 45), (COL_BPM, 40), (COL_KEY, 45), (COL_TAGS, 140), (COL_MISSING, 90)):
+                       (COL_YEAR, 45), (COL_BPM, 40), (COL_KEY, 45), (COL_TAGS, 140), (COL_COVER, 60), (COL_MISSING, 90)):
             self.table.setColumnWidth(col, w)
         self.table.cellDoubleClicked.connect(lambda row, _c: self.choose_match(row))
         self.table.itemChanged.connect(self.on_item_changed)
@@ -383,6 +385,16 @@ class MainWindow(QMainWindow):
         for row in range(len(self.items)):
             self.update_row(row)
 
+    @staticmethod
+    def cover_state(it: LibraryItem) -> str:
+        if it.status == MatchStatus.DONE:
+            return ""
+        if it.cover:
+            return "eigenes"
+        if it.selected and it.selected.image_url and it.selected.source != "Manuell":
+            return "Quelle"
+        return "Datei" if it.local.has_cover else "–"
+
     def update_row(self, row: int) -> None:
         if row >= self.table.rowCount():
             return
@@ -416,6 +428,7 @@ class MainWindow(QMainWindow):
             COL_BPM: str(meta.bpm or "") if meta else "",
             COL_KEY: key,
             COL_TAGS: " ".join(f"#{t}" for t in effective_tags(it, self.settings)),
+            COL_COVER: self.cover_state(it),
             COL_MISSING: ", ".join(missing),
             COL_TARGET: target,
         }
@@ -430,6 +443,9 @@ class MainWindow(QMainWindow):
             if col == COL_STATUS:
                 cell.setToolTip(it.message or val)
                 cell.setBackground(color if color is not None else QColor(0, 0, 0, 0))
+            elif col == COL_COVER:
+                cell.setToolTip("Eigenes Cover: Rechtsklick → Release / Cover bearbeiten")
+                cell.setBackground(MISSING_COLOR if val == "–" and it.status != MatchStatus.DONE else QColor(0, 0, 0, 0))
             elif col == COL_MISSING:
                 cell.setToolTip("Fehlende Pflichtfelder – Rechtsklick → Metadaten bearbeiten")
                 cell.setBackground(MISSING_COLOR if missing else QColor(0, 0, 0, 0))
@@ -510,6 +526,8 @@ class MainWindow(QMainWindow):
         if len(rows) > 1:
             menu.addAction(f"Release-URL für {len(rows)} Tracks übernehmen…", lambda: self.from_url(rows))
             menu.addSeparator()
+        menu.addAction("Release / Cover bearbeiten…" + (f" – {len(rows)} Tracks gemeinsam" if len(rows) > 1 else ""),
+                       lambda: self.edit_release(rows))
         menu.addAction("Tags setzen…" + (f" – {len(rows)} Tracks" if len(rows) > 1 else ""), lambda: self.set_tags(rows))
         menu.addAction("Als inoffiziell erfassen (Bootleg/Edit/SoundCloud)" + (f" – {len(rows)} Tracks" if len(rows) > 1 else ""),
                        lambda: self.mark_unofficial(rows))
@@ -671,6 +689,28 @@ class MainWindow(QMainWindow):
         item.tags = dlg.result_tags()
         item.status = MatchStatus.MANUAL
         item.message = "Metadaten bearbeitet"
+        self.refresh_targets()
+
+    def edit_release(self, rows: list[int]) -> None:
+        """Gemeinsame Release-Felder und Cover für mehrere Tracks auf einmal."""
+        if self.busy():
+            return
+        items = [self.items[r] for r in rows if self.items[r].status != MatchStatus.DONE]
+        if not items:
+            QMessageBox.information(self, "Release bearbeiten", "Die gewählten Tracks sind schon übernommen. "
+                                    "Rechtsklick → „Erneut bearbeiten“, um sie noch einmal zu ändern.")
+            return
+        dlg = ReleaseDialog(self, items)
+        if dlg.exec() != QDialog.Accepted:
+            return
+        n = apply_release_edit(items, dlg.changes(), dlg.renumber.isChecked())
+        if dlg.cover_changed:
+            for it in items:
+                it.cover = dlg.cover
+        skipped = len(rows) - len(items)
+        self.append_log(f"Release bearbeitet: {n or len(items)} Tracks"
+                        + (" (Cover gesetzt)" if dlg.cover_changed and dlg.cover else "")
+                        + (f", {skipped} bereits übernommene übersprungen" if skipped else ""))
         self.refresh_targets()
 
     # ------------------------------------------------------------ Einstellungen
