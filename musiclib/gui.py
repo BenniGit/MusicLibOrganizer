@@ -127,6 +127,9 @@ class MainWindow(QMainWindow):
         top.addWidget(self.settings_btn, 0, 3)
         self.login_label = QLabel("Beatport: nicht angemeldet")
         top.addWidget(self.login_label, 1, 3)
+        self.rekordbox_btn = QPushButton("🎧  Rekordbox-Umzug")
+        self.rekordbox_btn.setToolTip("Status anzeigen, Rekordbox auf die neue Library umstellen, Sicherung zurückspielen")
+        top.addWidget(self.rekordbox_btn, 0, 4)
         top.setColumnStretch(1, 1)
         root.addLayout(top)
 
@@ -221,6 +224,8 @@ class MainWindow(QMainWindow):
             a = QAction(text, self)
             a.triggered.connect(fn)
             m.addAction(a)
+        # Dasselbe Menü auch als Button im Fenster (auf dem Mac steht die Menüleiste oben am Bildschirm)
+        self.rekordbox_btn.setMenu(m)
 
         m = self.menuBar().addMenu("Auswahl")
         for text, fn, key in (("Alle angezeigten markieren", self.check_all, "Ctrl+Shift+A"),
@@ -238,6 +243,8 @@ class MainWindow(QMainWindow):
             self.login_label.setText(f"Beatport: Zugangsdaten aus {self._cred_source} ({self._username})")
         elif not self._username:
             self.login_label.setText("Beatport: Zugangsdaten unter ⚙ Einstellungen → Quellen eintragen")
+        where = Path(sys.executable).parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent.parent
+        self.append_log(f"MusicLibOrganizer {__version__} – gestartet aus {where}")
         if find_ffmpeg() is None:
             self.append_log("⚠ ffmpeg wurde nicht gefunden – FLAC/WAV können nicht konvertiert werden. "
                             "Installation: brew install ffmpeg")
