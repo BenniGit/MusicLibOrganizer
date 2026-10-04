@@ -52,7 +52,7 @@ class UnifyDialog(QDialog):
             item.setToolTip(shown)
             self.table.setItem(row, 2, item)
             combo = QComboBox()
-            combo.setEditable(True)
+            combo.setEditable(rule.field != "mix")  # „(Original Mix)“ kann nur wegfallen
             options = list(dict.fromkeys([rule.target] + [clean_text(s) for s in rule.spellings]))
             combo.addItems(options)
             combo.setCurrentText(rule.target)

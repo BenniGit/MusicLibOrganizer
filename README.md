@@ -105,6 +105,8 @@ musiclib-rekordbox zurueck                 # letzte Sicherung zurückspielen
 
 **Menü Datei → Schreibweisen vereinheitlichen…** findet Namen, die in der Ziel-Library unterschiedlich geschrieben sind („Omar-S“/„Omar S“, „K7 Records“/„!K7 Records“, „Tech House“/„Tech-House“, unsichtbare Zeichen oder zerlegte Umlaute) sowie den Discogs-Platzhalter „Not On Label“ (→ „Self-Released“). Pro Zeile wählst du die richtige Schreibweise; nach einer Vorschau werden die Tags neu geschrieben, Ordner und Dateinamen angepasst und alle Umbenennungen ins Umzugs-Journal eingetragen. Anschließend stellt die App auf Wunsch Rekordbox um (Sterne, Cues, Playlists bleiben). Alle alten Werte stehen im Protokoll unter `~/Library/Application Support/MusicLibOrganizer/vereinheitlichen/`.
 
+Außerdem bietet der Dialog an, **„(Original Mix)“ aus Titel und Dateiname zu entfernen** – der Mix-Name bleibt im Tag `MIX` erhalten. Für neue Tracks steuert das die Einstellung „„Original Mix“ weglassen“ (⚙ → Tags, standardmäßig an); andere Versionen wie Extended Mix, Remix oder Dub stehen weiter im Titel.
+
 Damit Rekordbox auch die neuen Namen anzeigt: die betroffenen Tracks markieren → Rechtsklick → „Tag-Informationen neu laden“.
 
 ## Test-Werkzeug: Energie schätzen (experimentell)

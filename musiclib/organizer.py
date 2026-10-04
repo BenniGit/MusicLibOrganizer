@@ -8,7 +8,7 @@ from datetime import date
 from pathlib import Path
 
 from .models import LibraryItem, no_label
-from .tagger import clean_text, format_key
+from .tagger import clean_text, format_key, shown_mix
 
 from .settings import DEFAULT_TEMPLATE  # noqa: F401  (Re-Export)
 
@@ -55,7 +55,8 @@ def validate_template(template: str) -> str | None:
     return None
 
 
-def fields_for(item: LibraryItem, key_format: str = "camelot", label_fallback: str = "") -> dict[str, str]:
+def fields_for(item: LibraryItem, key_format: str = "camelot", label_fallback: str = "",
+               hide_original_mix: bool = False) -> dict[str, str]:
     bp = item.selected
     loc = item.local
     added = date.today().strftime("%Y-%m")
@@ -67,7 +68,7 @@ def fields_for(item: LibraryItem, key_format: str = "camelot", label_fallback: s
             "disc": str(bp.disc_number or ""),
             "catno": bp.catalog_number,
             "title": bp.name,
-            "mix": bp.mix,
+            "mix": shown_mix(bp.mix, hide_original_mix),
             "genre": bp.genre or UNKNOWN_GENRE,
             "label": label_fallback if no_label(bp.label) else bp.label,
             "album": bp.release,
@@ -84,7 +85,7 @@ def fields_for(item: LibraryItem, key_format: str = "camelot", label_fallback: s
         "disc": loc.old.get("disc", "").split("/")[0].strip(),
         "catno": loc.old.get("catno", ""),
         "title": loc.title or loc.path.stem,
-        "mix": loc.mix,
+        "mix": shown_mix(loc.mix, hide_original_mix),
         "genre": UNKNOWN_GENRE,
         "label": label_fallback,
         "album": loc.album,
@@ -96,8 +97,9 @@ def fields_for(item: LibraryItem, key_format: str = "camelot", label_fallback: s
 
 
 def target_path(item: LibraryItem, target_root: Path, template: str, key_format: str = "camelot",
-                label_fallback: str = "") -> Path:
-    fields = {k: re.sub(r"\s*/\s*", " - ", v) for k, v in fields_for(item, key_format, label_fallback).items()}
+                label_fallback: str = "", hide_original_mix: bool = False) -> Path:
+    fields = {k: re.sub(r"\s*/\s*", " - ", v)
+              for k, v in fields_for(item, key_format, label_fallback, hide_original_mix).items()}
     rendered = template.format(**fields)
     raw = rendered.split("/")
     # Leere Ordnerebenen (z. B. unbekanntes Album) fallen weg, der Dateiname nie
@@ -136,14 +138,14 @@ def fit_path_length(target_root: Path, parts: list[str], limit: int = MAX_PATH_L
 
 
 def assign_targets(items: list[LibraryItem], target_root: Path, template: str, key_format: str = "camelot",
-                   label_fallback: str = "") -> None:
+                   label_fallback: str = "", hide_original_mix: bool = False) -> None:
     """Setzt item.target für alle aktiven Einträge und löst Namenskonflikte auf."""
     taken: set[Path] = set()
     for item in items:
         if not item.enabled:
             item.target = None
             continue
-        base = target_path(item, target_root, template, key_format, label_fallback)
+        base = target_path(item, target_root, template, key_format, label_fallback, hide_original_mix)
         candidate = base
         n = 2
         own = {item.local.path.resolve()} | ({item.previous.resolve()} if item.previous else set())

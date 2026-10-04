@@ -16,7 +16,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
-from mutagen.id3 import ID3, TCON, TPE1, TPE2, TPUB
+from mutagen.id3 import ID3, TCON, TIT2, TPE1, TPE2, TPUB, TXXX
 
 from .audit import FileInfo, _artists
 from .backup import data_dir
@@ -32,8 +32,10 @@ FIELDS = {
     "artist": ("Artist / Album-Artist", ("artist", "albumartist")),
     "label": ("Label", ("label",)),
     "genre": ("Genre", ("genre",)),
+    "mix": ("Titel: „(Original Mix)“", ("title",)),
 }
-FRAMES = {"artist": TPE1, "albumartist": TPE2, "label": TPUB, "genre": TCON}
+FRAMES = {"artist": TPE1, "albumartist": TPE2, "label": TPUB, "genre": TCON, "title": TIT2, "mix": TXXX}
+REMOVE = "weglassen"
 
 
 @dataclass
@@ -75,7 +77,7 @@ def _values(f: FileInfo, rule_field: str) -> list[str]:
 
 def find_rules(files: list[FileInfo], label_fallback: str = "Self-Released") -> list[Rule]:
     rules: list[Rule] = []
-    for rule_field in FIELDS:
+    for rule_field in ("artist", "label", "genre"):
         groups: dict[str, Counter] = defaultdict(Counter)
         for f in files:
             for v in set(_values(f, rule_field)):
@@ -87,7 +89,19 @@ def find_rules(files: list[FileInfo], label_fallback: str = "Self-Released") -> 
     placeholders = Counter(f.tags.get("label", "") for f in files if f.tags.get("label") and no_label(f.tags["label"]))
     if placeholders and label_fallback.strip():
         rules.append(Rule("label", dict(placeholders.most_common()), label_fallback.strip()))
+    originals = Counter(m for f in files for m in [_original_mix(f.tags.get("title", ""))] if m)
+    if originals:
+        rules.append(Rule("mix", dict(originals.most_common()), REMOVE))
     return sorted(rules, key=lambda r: (list(FIELDS).index(r.field), r.target.lower()))
+
+
+def _original_mix(title: str) -> str:
+    """'Song (Original Mix)' -> 'Original Mix'; sonst ''."""
+    from .matcher import canonical_mix
+    from .scanner import split_mix
+
+    _name, mix = split_mix(title)
+    return mix if mix and canonical_mix(mix) == "original" else ""
 
 
 def _replace_tokens(value: str, rules: list[Rule]) -> str:
@@ -122,6 +136,11 @@ def _new_parts(parts: list[str], old: dict[str, str], new: dict[str, str]) -> li
                 parts[1] = parts[1][:idx] + new_l + parts[1][idx + len(old_l):]
             elif no_label(old["label"]):  # Ordner „[Not On Label]“, Tag „Not On Label (… Self-released)“
                 parts[1] = re.sub(r"\[not on label[^\]]*\]", lambda _m: new_l, parts[1], flags=re.I)
+    if new.get("title") != old.get("title") and old.get("title", "").startswith(new.get("title", "")):
+        removed = path_part(old["title"][len(new["title"]):]).strip()   # z. B. "(Original Mix)"
+        stem, ext = os.path.splitext(parts[-1])
+        if removed and stem.casefold().endswith(" " + removed.casefold()):
+            parts[-1] = stem[:-len(removed) - 1] + ext
     if new.get("artist") != old.get("artist"):
         stem, ext = os.path.splitext(parts[-1])
         segs = stem.split(" - ")
@@ -144,6 +163,10 @@ def plan(root: Path, files: list[FileInfo], rules: list[Rule]) -> list[Change]:
             for r in by_field[k]:
                 if r.replaces(old[k]):
                     new[k] = r.target
+        mix = _original_mix(old["title"]) if by_field["mix"] else ""
+        if mix:
+            new["title"] = old["title"][:old["title"].rfind(f"({mix})")].rstrip()
+            new["mix"] = old["mix"] or mix  # Mix-Name bleibt im MIX-Tag
         tags = {k: (old[k], new[k]) for k in FRAMES if old[k] != new[k]}
         if not tags:
             continue
@@ -227,6 +250,11 @@ def _write_tags(path: Path, tags: dict[str, tuple[str, str]]) -> None:
     id3 = ID3(path)
     for k, (_old, new) in tags.items():
         frame = FRAMES[k]
+        if k == "mix":
+            id3.delall("TXXX:MIX")
+            if new:
+                id3.add(TXXX(encoding=3, desc="MIX", text=[new]))
+            continue
         id3.delall(frame.__name__)
         if new:
             id3.add(frame(encoding=3, text=[new]))

@@ -107,3 +107,42 @@ def test_rekordbox_follows_renamed_files(lib, tmp_path, monkeypatch):
     rbdb.apply(db, steps, j)
     assert db.get_content(ID="1").Rating == 5 and rbdb.verify(db, steps) == []
     db.close()
+
+
+@needs_ffmpeg
+def test_original_mix_is_removed_from_title_and_filename(tmp_path, monkeypatch):
+    monkeypatch.setattr(unify, "data_dir", lambda: tmp_path / "data")
+    base = make_audio(tmp_path / "src" / "base.mp3")
+    root = tmp_path / "Lib"
+    orig = tagged(root / "A/2020 - R [L]/01 - A - Song (Original Mix).mp3", base, "A", "Song (Original Mix)",
+                  "R", "A", "L", "Techno", "2020", "1/2")
+    ext = tagged(root / "A/2020 - R [L]/02 - A - Other (Extended Mix).mp3", base, "A", "Other (Extended Mix)",
+                 "R", "A", "L", "Techno", "2020", "2/2")
+    rules = unify.find_rules(audit.collect(root))
+    (rule,) = [r for r in rules if r.field == "mix"]
+    assert rule.spellings == {"Original Mix": 1} and rule.target == unify.REMOVE
+    changes = unify.plan(root, audit.collect(root), rules)
+    assert [c.path for c in changes] == [orig]
+    j = Journal(tmp_path / "j.sqlite")
+    ok, problems, _ = unify.apply(root, changes, j)
+    new = root / "A/2020 - R [L]/01 - A - Song.mp3"
+    assert problems == [] and new.exists() and ext.exists()
+    tags = ID3(new)
+    assert str(tags["TIT2"]) == "Song" and str(tags["TXXX:MIX"]) == "Original Mix"
+    assert {m.src: m.dst for m in j.all()}[str(orig)] == str(new)
+
+
+def test_new_tracks_without_original_mix(tmp_path, bp_track):
+    from musiclib.models import LibraryItem, LocalTrack
+    from musiclib.organizer import target_path
+    from musiclib.settings import DEFAULT_TEMPLATE
+    from musiclib.tagger import format_title
+
+    bp_track.mix = "Original Mix"
+    bp_track.track_number = 1
+    assert format_title(bp_track, True, hide_original_mix=True) == "One More Time"
+    assert format_title(bp_track, True) == "One More Time (Original Mix)"
+    item = LibraryItem(LocalTrack(tmp_path / "x.mp3"), selected=bp_track)
+    assert target_path(item, tmp_path, DEFAULT_TEMPLATE, hide_original_mix=True).name == "01 - Daft Punk - One More Time.mp3"
+    bp_track.mix = "Extended Mix"
+    assert format_title(bp_track, True, hide_original_mix=True) == "One More Time (Extended Mix)"

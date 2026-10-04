@@ -505,7 +505,7 @@ class MainWindow(QMainWindow):
         if self.items and self.dst_edit.text():
             pending = [i for i in self.items if i.status != MatchStatus.DONE]
             assign_targets(pending, Path(self.dst_edit.text()), self.settings.template,
-                           self.settings.key_format, self.settings.label_fallback)
+                           self.settings.key_format, self.settings.label_fallback, self.settings.hide_original_mix)
         for row in range(len(self.items)):
             self.update_row(row)
         self.update_buttons()
@@ -1075,6 +1075,7 @@ class MainWindow(QMainWindow):
             return
         opts = ApplyOptions(move=s.move, label_fallback=s.label_fallback,
                             tag=TagOptions(key_format=s.key_format, mix_in_title=s.mix_in_title,
+                                           hide_original_mix=s.hide_original_mix,
                                            embed_cover=s.embed_cover, clean=s.clean_tags))
         cover_loader = make_cover_loader(list(self.url_clients().values()))
 

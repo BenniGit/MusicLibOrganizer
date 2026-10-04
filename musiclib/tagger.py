@@ -30,6 +30,7 @@ CAMELOT_TO_KEY = {
 class TagOptions:
     key_format: str = "camelot"  # "camelot" | "musical"
     mix_in_title: bool = True
+    hide_original_mix: bool = False  # „(Original Mix)“ nicht in den Titel schreiben
     embed_cover: bool = True
     clean: bool = True  # alle vorhandenen Tags entfernen, bevor neue geschrieben werden
 
@@ -40,9 +41,19 @@ def format_key(track: TrackMeta, key_format: str) -> str:
     return track.key_name or track.key_camelot
 
 
-def format_title(track: TrackMeta, mix_in_title: bool) -> str:
-    if mix_in_title and track.mix:
-        return f"{track.name} ({track.mix})"
+def shown_mix(mix: str, hide_original: bool = False) -> str:
+    """Mix-Name für Titel und Dateiname; „Original Mix“ fällt auf Wunsch weg (steht dann nur im MIX-Tag)."""
+    from .matcher import canonical_mix
+
+    if hide_original and mix and canonical_mix(mix) == "original":
+        return ""
+    return mix
+
+
+def format_title(track: TrackMeta, mix_in_title: bool, hide_original_mix: bool = False) -> str:
+    mix = shown_mix(track.mix, hide_original_mix)
+    if mix_in_title and mix:
+        return f"{track.name} ({mix})"
     return track.name
 
 
@@ -102,7 +113,7 @@ def write_tags(path: Path, track: TrackMeta, opts: TagOptions, cover: bytes | No
             tags.add(frame_cls(encoding=3, text=[str(value)], **kw))
 
     put(TPE1, track.artist)
-    put(TIT2, format_title(track, opts.mix_in_title))
+    put(TIT2, format_title(track, opts.mix_in_title, opts.hide_original_mix))
     put(TPE2, track.effective_album_artist)
     put(TALB, track.release)
     if track.track_number:

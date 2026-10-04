@@ -102,6 +102,11 @@ class SettingsDialog(QDialog):
         self.mix_check = QCheckBox("Mix-Name im Titel, z. B. „Song (Extended Mix)“")
         self.mix_check.setChecked(s.mix_in_title)
         form.addRow("", self.mix_check)
+        self.hide_original_check = QCheckBox("„Original Mix“ weglassen (nur andere Versionen wie Extended Mix, Remix, Dub stehen im Titel)")
+        self.hide_original_check.setToolTip("Der Mix-Name bleibt im Tag MIX erhalten.")
+        self.hide_original_check.setChecked(s.hide_original_mix)
+        self.hide_original_check.toggled.connect(lambda _on: self._update_preview())
+        form.addRow("", self.hide_original_check)
         self.cover_check = QCheckBox("Cover einbetten")
         self.cover_check.setChecked(s.embed_cover)
         form.addRow("", self.cover_check)
@@ -259,7 +264,9 @@ class SettingsDialog(QDialog):
         lines = []
         for meta in examples:
             item = LibraryItem(LocalTrack(Path("x.mp3")), selected=meta)
-            lines.append(str(target_path(item, Path("Bibliothek"), tpl, "camelot", fallback)))
+            hide = getattr(self, "hide_original_check", None)
+            lines.append(str(target_path(item, Path("Bibliothek"), tpl, "camelot", fallback,
+                                         hide.isChecked() if hide else self._settings.hide_original_mix)))
         self.preview.setText("<br>".join(f"<code>{line}</code>" for line in lines))
 
     def _accept(self) -> None:
@@ -276,6 +283,7 @@ class SettingsDialog(QDialog):
             move=self.move_radio.isChecked(),
             key_format=self.key_combo.currentData(),
             mix_in_title=self.mix_check.isChecked(),
+            hide_original_mix=self.hide_original_check.isChecked(),
             embed_cover=self.cover_check.isChecked(),
             clean_tags=self.clean_check.isChecked(),
             required_fields=[k for k, cb in self.required_checks.items() if cb.isChecked()],

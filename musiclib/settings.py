@@ -48,6 +48,7 @@ class AppSettings:
     template: str = DEFAULT_TEMPLATE
     key_format: str = "camelot"  # "camelot" | "musical"
     mix_in_title: bool = True
+    hide_original_mix: bool = True  # „(Original Mix)“ weglassen – steht dann nur im MIX-Tag
     embed_cover: bool = True
     move: bool = False
     clean_tags: bool = True
