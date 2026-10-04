@@ -40,7 +40,7 @@ class Journal:
             self.con.execute("ALTER TABLE moves ADD COLUMN prev TEXT NOT NULL DEFAULT '[]'")
         self.con.commit()
 
-    def record(self, src: Path, dst: Path) -> None:
+    def record(self, src: Path, dst: Path, commit: bool = True) -> None:
         """Merkt sich alt → neu.
 
         Wird eine Datei erneut übernommen, zählt das neueste Ziel; die früheren Ziele bleiben bekannt,
@@ -61,6 +61,10 @@ class Journal:
                 prev = [p for p in prev if p not in (old_dst, dst)] + [old_dst]
             self.con.execute("UPDATE moves SET dst=?, created=?, switched=NULL, prev=? WHERE src=?",
                              (dst, now, json.dumps(prev, ensure_ascii=False), key))
+        if commit:
+            self.con.commit()
+
+    def commit(self) -> None:
         self.con.commit()
 
     def is_target(self, path: Path) -> bool:

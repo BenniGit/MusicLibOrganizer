@@ -229,6 +229,7 @@ class MainWindow(QMainWindow):
         m = self.menuBar().addMenu("Rekordbox")
         for text, fn in (("Umzugs-Status anzeigen…", self.rekordbox_status),
                          ("Rekordbox auf neue Library umstellen…", self.rekordbox_switch),
+                         ("Library-Ordner umbenennen…", self.rename_library),
                          ("Letzte Sicherung zurückspielen…", self.rekordbox_restore)):
             a = QAction(text, self)
             a.triggered.connect(fn)
@@ -960,6 +961,52 @@ class MainWindow(QMainWindow):
         finally:
             db.close()
             journal.close()
+
+    def rename_library(self) -> None:
+        """Ganzen Library-Ordner umbenennen (z. B. LibOrganized → Library) und Rekordbox nachziehen."""
+        from PySide6.QtWidgets import QInputDialog
+
+        from . import relocate
+
+        if self.busy():
+            return
+        old_root = Path(self.dst_edit.text())
+        if not old_root.is_dir():
+            QMessageBox.warning(self, "Library umbenennen", "Bitte oben die Ziel-Bibliothek wählen.")
+            return
+        if rbdb.rekordbox_running():
+            QMessageBox.warning(self, "Library umbenennen", "Bitte zuerst Rekordbox beenden.")
+            return
+        new_text, ok = QInputDialog.getText(self, "Library umbenennen", f"Neuer Pfad für\n{old_root}:",
+                                            text=str(old_root.with_name("Library")))
+        if not ok or not new_text.strip():
+            return
+        new_root = Path(new_text.strip()).expanduser()
+        err = relocate.check(old_root, new_root)
+        if err:
+            QMessageBox.warning(self, "Library umbenennen", err)
+            return
+        if QMessageBox.question(self, "Library umbenennen",
+                                f"„{old_root.name}“ wird zu\n{new_root}\n\nDanach wird Rekordbox auf die neuen Pfade "
+                                "umgestellt (mit Sicherung). Weiter?") != QMessageBox.Yes:
+            return
+        journal = Journal()
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            n = relocate.rename_library(old_root, new_root, journal)
+        except Exception as e:
+            QApplication.restoreOverrideCursor()
+            QMessageBox.critical(self, "Library umbenennen", f"Fehler: {e}")
+            return
+        finally:
+            journal.close()
+        QApplication.restoreOverrideCursor()
+        self.append_log(f"Library umbenannt: {old_root} → {new_root} ({n} Dateien im Umzugs-Journal)")
+        self.dst_edit.setText(str(new_root))
+        if Path(self.src_edit.text() or "/") == old_root:
+            self.src_edit.setText(str(new_root))
+        self.save_settings()
+        self.rekordbox_switch()
 
     def rekordbox_restore(self) -> None:
         b = rbdb.latest_backup()

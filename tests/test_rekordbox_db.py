@@ -1,3 +1,4 @@
+import shutil
 import unicodedata
 from pathlib import Path
 
@@ -181,3 +182,30 @@ def test_switch_rewrites_rekordbox7_analysis_files(setup, capsys):
     # Sicherung enthält die alten Analyse-Dateien und spielt sie zurück
     assert main(args + ["zurueck", "--sicherungen", str(tmp / "bak")]) == 0
     assert anlz_path.read_path(anlz_dir / "ANLZ0000.2EX") == str(a_old)
+
+
+def test_rename_whole_library(setup, capsys):
+    """Erst umziehen und umstellen, dann LibOrganized → Library umbenennen."""
+    tmp, db_path, a_old, a_new, u_new = setup
+    args = ["--db", str(db_path), "--journal", str(tmp / "umzug.sqlite")]
+    assert main(args + ["umstellen", "--anwenden", "--sicherungen", str(tmp / "bak")]) == 0
+    old_lib = tmp / "Library"
+    shutil.rmtree(old_lib)  # alter Ordner gelöscht
+    new_root = tmp / "LibOrganized"
+    assert main(args + ["umbenennen", str(new_root), str(old_lib), "--sicherungen", str(tmp / "bak2")]) == 0
+    out = capsys.readouterr().out
+    assert "Alles geprüft" in out
+    db = rbdb.open_db(db_path)
+    c = db.get_content(ID="1")
+    assert c.FolderPath == str(old_lib / a_new.relative_to(new_root)) and c.Rating == 4
+    assert db.get_content(ID="5").FolderPath == str(old_lib / u_new.relative_to(new_root))
+    db.close()
+    assert not new_root.exists()
+
+
+def test_rename_refuses_when_target_exists(setup, capsys):
+    tmp, db_path, *_ = setup
+    args = ["--db", str(db_path), "--journal", str(tmp / "umzug.sqlite")]
+    assert main(args + ["umbenennen", str(tmp / "LibOrganized"), str(tmp / "Library")]) == 1
+    assert "existiert schon" in capsys.readouterr().out
+    assert (tmp / "LibOrganized").exists()

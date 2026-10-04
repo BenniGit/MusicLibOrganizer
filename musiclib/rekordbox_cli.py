@@ -4,6 +4,7 @@
     musiclib-rekordbox umstellen           # Probelauf
     musiclib-rekordbox umstellen --anwenden   # sichert, stellt um, prüft (Rekordbox muss geschlossen sein)
     musiclib-rekordbox zurueck             # letzte Sicherung zurückspielen
+    musiclib-rekordbox umbenennen ALT NEU  # Library-Ordner umbenennen und Rekordbox nachziehen
 """
 from __future__ import annotations
 
@@ -29,6 +30,10 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("umstellen", help="Pfade in Rekordbox auf die neue Library umstellen")
     p.add_argument("--anwenden", action="store_true", help="wirklich ändern (sonst nur Probelauf)")
     p.add_argument("--sicherungen", type=Path, help=argparse.SUPPRESS)
+    u = sub.add_parser("umbenennen", help="Library-Ordner umbenennen und Rekordbox umstellen")
+    u.add_argument("alt", type=Path)
+    u.add_argument("neu", type=Path)
+    u.add_argument("--sicherungen", type=Path, help=argparse.SUPPRESS)
     z = sub.add_parser("zurueck", help="Sicherung zurückspielen")
     z.add_argument("sicherung", nargs="?", type=Path, help="Sicherungsordner (Standard: die neueste)")
     z.add_argument("--sicherungen", type=Path, help=argparse.SUPPRESS)
@@ -45,6 +50,24 @@ def main(argv: list[str] | None = None) -> int:
         master = rbdb.restore(b)
         print(f"Sicherung {b.name} zurückgespielt nach {master}.")
         return 0
+
+    if args.cmd == "umbenennen":
+        from . import relocate
+
+        if rbdb.rekordbox_running():
+            print("Bitte zuerst Rekordbox beenden.")
+            return 1
+        err = relocate.check(args.alt.expanduser(), args.neu.expanduser())
+        if err:
+            print(err)
+            return 1
+        j = Journal(args.journal)
+        try:
+            n = relocate.rename_library(args.alt.expanduser(), args.neu.expanduser(), j)
+        finally:
+            j.close()
+        print(f"Umbenannt: {args.alt} → {args.neu} ({n} Dateien). Stelle Rekordbox um …\n")
+        args.cmd, args.anwenden = "umstellen", True
 
     journal = Journal(args.journal)
     try:
