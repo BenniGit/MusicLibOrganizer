@@ -19,6 +19,8 @@ from PySide6.QtWidgets import (
 from . import __version__
 from .backup import backup_dir
 from . import credentials
+from . import rekordbox_db as rbdb
+from .journal import Journal
 from .bandcamp import BandcampClient
 from .converter import find_ffmpeg
 from .manual import as_unofficial
@@ -211,6 +213,14 @@ class MainWindow(QMainWindow):
         a.setShortcut(QKeySequence.Quit)
         a.triggered.connect(self.close)
         m.addAction(a)
+
+        m = self.menuBar().addMenu("Rekordbox")
+        for text, fn in (("Umzugs-Status anzeigen…", self.rekordbox_status),
+                         ("Rekordbox auf neue Library umstellen…", self.rekordbox_switch),
+                         ("Letzte Sicherung zurückspielen…", self.rekordbox_restore)):
+            a = QAction(text, self)
+            a.triggered.connect(fn)
+            m.addAction(a)
 
         m = self.menuBar().addMenu("Auswahl")
         for text, fn, key in (("Alle angezeigten markieren", self.check_all, "Ctrl+Shift+A"),
@@ -501,6 +511,8 @@ class MainWindow(QMainWindow):
         menu.addAction("Nicht markieren", lambda: self._set_rows(rows, False))
         menu.addSeparator()
         menu.addAction("Nur diese ausführen", lambda: self.start_apply(rows))
+        if any(self.items[r].status == MatchStatus.DONE for r in rows):
+            menu.addAction("Erneut bearbeiten", lambda: self.reprocess(rows))
         menu.exec(self.table.viewport().mapToGlobal(pos))
 
     def _confirm_rows(self, rows: list[int]) -> None:
@@ -668,10 +680,124 @@ class MainWindow(QMainWindow):
 
         def done():
             self.items = result
+            self.mark_already_moved()
             self.fill_table()
             self.refresh_targets()
 
         self.run_worker(job, done)
+
+    def mark_already_moved(self) -> None:
+        """Dateien, die laut Umzugs-Journal schon in der neuen Library liegen, als erledigt zeigen."""
+        journal = Journal()
+        n = 0
+        for it in self.items:
+            dst = journal.target_for(it.local.path)
+            if dst and Path(dst).is_file():
+                it.status, it.enabled, it.target = MatchStatus.DONE, False, Path(dst)
+                it.message = "bereits in die neue Library übernommen"
+                n += 1
+        journal.close()
+        if n:
+            self.append_log(f"{n} Dateien wurden schon früher übernommen und sind als „erledigt“ markiert "
+                            "(Rechtsklick → „Erneut bearbeiten“, um sie noch einmal zu verarbeiten).")
+
+    def reprocess(self, rows: list[int]) -> None:
+        for r in rows:
+            it = self.items[r]
+            if it.status == MatchStatus.DONE:
+                it.status = MatchStatus.MANUAL if it.selected else MatchStatus.PENDING
+                it.enabled, it.message = True, "erneut bearbeiten"
+        self.refresh_targets()
+
+    # ------------------------------------------------------------ Rekordbox
+    def _open_rekordbox(self):
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            return rbdb.open_db(), Journal()
+        finally:
+            QApplication.restoreOverrideCursor()
+
+    def rekordbox_status(self) -> None:
+        try:
+            db, journal = self._open_rekordbox()
+        except Exception as e:
+            QMessageBox.warning(self, "Rekordbox", str(e))
+            return
+        try:
+            text = rbdb.summary(rbdb.plan(db, journal))
+        finally:
+            db.close()
+            journal.close()
+        self._show_text("Rekordbox – Umzugs-Status", text)
+
+    def rekordbox_switch(self) -> None:
+        if rbdb.rekordbox_running():
+            QMessageBox.warning(self, "Rekordbox umstellen", "Bitte zuerst Rekordbox beenden.")
+            return
+        try:
+            db, journal = self._open_rekordbox()
+        except Exception as e:
+            QMessageBox.warning(self, "Rekordbox", str(e))
+            return
+        try:
+            steps = rbdb.plan(db, journal)
+            n = sum(s.action == rbdb.SWITCH for s in steps)
+            if not n:
+                journal.mark_switched([s.old for s in steps if s.action == rbdb.ALREADY])
+                self._show_text("Rekordbox umstellen", "Nichts umzustellen.\n\n" + rbdb.summary(steps))
+                return
+            msg = (f"{n} Tracks in Rekordbox auf die neue Library umstellen?\n\n"
+                   "Sterne, Farben, Cues, Playlists und Import-Datum bleiben erhalten. "
+                   "Vorher werden master.db und die Analyse-Dateien gesichert.")
+            if QMessageBox.question(self, "Rekordbox umstellen", msg) != QMessageBox.Yes:
+                return
+            QApplication.setOverrideCursor(Qt.WaitCursor)
+            try:
+                backup_dir = rbdb.backup(db, steps)
+                done = rbdb.apply(db, steps, journal)
+                problems = rbdb.verify(db, steps)
+            finally:
+                QApplication.restoreOverrideCursor()
+            self.append_log(f"Rekordbox: {done} Tracks umgestellt, Sicherung: {backup_dir}")
+            if problems:
+                self._show_text("Rekordbox umstellen – Probleme",
+                                f"{done} umgestellt, aber {len(problems)} Probleme:\n\n" + "\n".join(problems[:50])
+                                + "\n\nZurück zum vorherigen Stand: Menü Rekordbox → Letzte Sicherung zurückspielen")
+            else:
+                QMessageBox.information(self, "Rekordbox umstellen",
+                                        f"{done} Tracks umgestellt und geprüft ✔\nRekordbox kann wieder gestartet werden.")
+        except Exception as e:
+            QMessageBox.critical(self, "Rekordbox umstellen", f"Fehler: {e}\n\nNichts wurde gespeichert, "
+                                 "oder die Sicherung kann über das Menü zurückgespielt werden.")
+        finally:
+            db.close()
+            journal.close()
+
+    def rekordbox_restore(self) -> None:
+        b = rbdb.latest_backup()
+        if not b:
+            QMessageBox.information(self, "Rekordbox", "Keine Sicherung vorhanden.")
+            return
+        if rbdb.rekordbox_running():
+            QMessageBox.warning(self, "Rekordbox", "Bitte zuerst Rekordbox beenden.")
+            return
+        if QMessageBox.question(self, "Rekordbox", f"Sicherung vom {b.name} zurückspielen?") != QMessageBox.Yes:
+            return
+        master = rbdb.restore(b)
+        QMessageBox.information(self, "Rekordbox", f"Sicherung zurückgespielt ({master}).")
+
+    def _show_text(self, title: str, text: str) -> None:
+        dlg = QDialog(self)
+        dlg.setWindowTitle(title)
+        dlg.resize(900, 520)
+        lay = QVBoxLayout(dlg)
+        view = QPlainTextEdit(text)
+        view.setReadOnly(True)
+        lay.addWidget(view)
+        b = QPushButton("Schließen")
+        b.clicked.connect(dlg.accept)
+        lay.addWidget(b)
+        dlg.exec()
 
     def start_match(self) -> None:
         sources = self.sources()
@@ -762,6 +888,7 @@ class MainWindow(QMainWindow):
 
         def job(w: Worker):
             ok = fail = 0
+            journal = Journal()  # eigene Verbindung im Hintergrund-Thread
             for n, row in enumerate(rows, 1):
                 if w.cancelled:
                     break
@@ -769,6 +896,7 @@ class MainWindow(QMainWindow):
                 w.progress.emit(n, len(rows), it.local.path.name)
                 try:
                     result = apply_item(it, opts, cover_loader, effective_tags(it, s))
+                    journal.record(it.local.path, it.target)  # für das spätere Umstellen in Rekordbox
                     it.message = result
                     it.enabled = False
                     it.status = MatchStatus.DONE
@@ -799,6 +927,9 @@ def main() -> int:
         from PySide6.QtCore import QTimer
 
         print(f"MusicLibOrganizer {__version__} gestartet")
+        import pyrekordbox.db6.database  # noqa: F401  (im App-Paket enthalten?)
+        import sqlcipher3  # noqa: F401
+        print("Rekordbox-Datenbankzugriff verfügbar")
         QTimer.singleShot(1500, app.quit)
     return app.exec()
 

@@ -38,6 +38,32 @@ Standardmäßig werden **alle vorhandenen Tags entfernt** (ID3v1, ID3v2, APE) un
 Im Metadaten-Editor steht neben jedem Feld der **bisherige Wert aus der Datei** – ein Klick übernimmt ihn. Alle übrigen vorhandenen Tags (Kommentar, Komponist, Rating …) werden darunter aufgelistet und können pro Track **zum Behalten angehakt** werden.
 Hinweis: Auch Cue-Punkte von Serato/Traktor, die in Tags gespeichert sind, werden entfernt, wenn du sie nicht anhakst. Rekordbox speichert Cues in seiner eigenen Datenbank und ist davon nicht betroffen.
 
+## Umzug in eine neue Library – Rekordbox bleibt erhalten
+
+Die App kann die Sammlung **nach und nach** in eine neue Library kopieren (z. B. von `Music/Library` nach
+`Music/LibOrganized`), während Rekordbox weiter mit den alten Dateien arbeitet. Danach werden in Rekordbox nur die
+**Dateipfade** umgestellt – Sterne, Farben, Cues, Beatgrids, Playlists, History und Import-Datum bleiben erhalten,
+es gibt keinen Neuimport.
+
+1. **Übernehmen:** Quelle = alte Library, Ziel = neue Library, Modus „Kopieren“. Jede übernommene Datei wird im
+   Umzugs-Journal vermerkt (alter ↔ neuer Pfad). Beim nächsten Scan erscheinen schon übernommene Dateien als „erledigt“.
+2. **Umstellen:** Rekordbox beenden, dann Menü **Rekordbox → Rekordbox auf neue Library umstellen…** (oder
+   `musiclib-rekordbox umstellen --anwenden`). Vorher werden `master.db` und die Analyse-Dateien der betroffenen Tracks
+   gesichert, danach wird geprüft, dass jeder umgestellte Track seine Datei findet. Das geht beliebig oft – jedes Mal
+   werden die seitdem übernommenen Dateien umgestellt.
+3. **Zurück:** Menü **Rekordbox → Letzte Sicherung zurückspielen…** (oder `musiclib-rekordbox zurueck`).
+
+Hinweise: Tracks, deren Format sich ändert (FLAC → MP3), werden nicht automatisch umgestellt, sondern im Status
+aufgeführt. Titel/Artist usw. zeigt Rekordbox aus der eigenen Datenbank – nach dem Umstellen in Rekordbox die Tracks
+markieren und „Tag-Informationen neu laden“, um die neuen Tags zu übernehmen. Der Zugriff auf die `master.db` nutzt
+[pyrekordbox](https://github.com/dylanljones/pyrekordbox) und ist von Pioneer nicht offiziell unterstützt.
+
+```bash
+musiclib-rekordbox status                  # was würde umgestellt (ändert nichts)
+musiclib-rekordbox umstellen --anwenden    # sichern, umstellen, prüfen
+musiclib-rekordbox zurueck                 # letzte Sicherung zurückspielen
+```
+
 ## Treffer prüfen und korrigieren
 
 - **Doppelklick** auf eine Zeile: alle Treffer aller Quellen ansehen, manuell suchen (auch gezielt nur in einer Quelle), im Browser öffnen, übernehmen.

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "musiclib-organizer"
-version = "0.7.0"
+version = "0.8.0"
 description = "Musikbibliothek mit Beatport-Metadaten taggen, zu MP3 320 kbit/s konvertieren und sortieren"
 requires-python = ">=3.10"
 dependencies = [
@@ -13,6 +13,7 @@ dependencies = [
     "PySide6>=6.6",
     "numpy>=1.24",
     "keyring>=24",
+    "pyrekordbox>=0.4",
 ]
 
 [project.optional-dependencies]
@@ -21,6 +22,7 @@ ki = ["essentia-tensorflow"]  # KI-Analyse für musiclib-energie --ki (macOS 15+
 
 [project.scripts]
 musiclib-energie = "musiclib.energy_cli:main"
+musiclib-rekordbox = "musiclib.rekordbox_cli:main"
 
 [project.gui-scripts]
 musiclib-organizer = "musiclib.gui:main"

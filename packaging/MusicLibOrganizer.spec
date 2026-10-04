@@ -19,7 +19,8 @@ EXCLUDES = [
 a = Analysis(
     [str(ROOT / "packaging" / "launcher.py")],
     pathex=[str(ROOT)],
-    hiddenimports=["keyring.backends.macOS", "keyring.backends.Windows", "keyring.backends.SecretService"],
+    hiddenimports=["keyring.backends.macOS", "keyring.backends.Windows", "keyring.backends.SecretService",
+                   "sqlcipher3", "pyrekordbox.db6"],
     excludes=EXCLUDES,
     noarchive=False,
 )
