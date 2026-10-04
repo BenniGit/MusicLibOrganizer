@@ -14,6 +14,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
 
+from . import anlz_path
 from .backup import data_dir
 from .journal import Journal, norm
 
@@ -165,24 +166,33 @@ def backup(db, steps: list[Step], root: Path | None = None) -> Path:
     return dest
 
 
-def _set_path(db, content, new_path: str) -> None:
-    """Pfad in Datenbank und (falls vorhanden) Analyse-Dateien setzen."""
-    try:
-        db.update_content_path(content, new_path, save=True, check_path=True, commit=False)
-    except FileNotFoundError:
-        # Nie analysierter Track: keine Analyse-Dateien – nur den Datenbank-Eintrag ändern
-        old = content.FolderPath
-        content.FolderPath = new_path
-        if content.OrgFolderPath == old:
-            content.OrgFolderPath = new_path
-        content.FileNameL = Path(new_path).name
+def _set_path(db, content, new_path: str, warnings: list[str] | None = None) -> None:
+    """Pfad in der Datenbank und in den Analyse-Dateien (PPTH) setzen.
+
+    Die Analyse-Dateien ändern wir selbst (nur den Pfad-Abschnitt), weil pyrekordbox neuere
+    Rekordbox-7-Analysen nicht vollständig lesen kann. Ein Fehler dort ist nicht schlimm –
+    Rekordbox nutzt den Pfad aus der Datenbank – und wird nur gemeldet.
+    """
+    d = _anlz_dir(db, content)
+    if d is not None:
+        for f in anlz_path.files_for(d, getattr(content, "AnalysisDataPath", None)):
+            try:
+                anlz_path.set_path(f, new_path)
+            except (anlz_path.AnlzError, OSError) as e:
+                if warnings is not None:
+                    warnings.append(f"{content.Title or Path(new_path).name}: Analyse-Datei {f.name} nicht geändert ({e})")
+    old = content.FolderPath
+    content.FolderPath = new_path
+    if content.OrgFolderPath == old:
+        content.OrgFolderPath = new_path
+    content.FileNameL = Path(new_path).name
 
 
-def apply(db, steps: list[Step], journal: Journal | None = None) -> int:
+def apply(db, steps: list[Step], journal: Journal | None = None, warnings: list[str] | None = None) -> int:
     """Stellt alle Schritte mit Aktion SWITCH um (Rekordbox muss geschlossen sein)."""
     todo = [s for s in steps if s.action == SWITCH]
     for s in todo:
-        _set_path(db, db.get_content(ID=s.content_id), s.new)
+        _set_path(db, db.get_content(ID=s.content_id), s.new, warnings)
     db.commit()
     if journal:
         journal.mark_switched([s.key or s.old for s in steps if s.action in (SWITCH, ALREADY)])

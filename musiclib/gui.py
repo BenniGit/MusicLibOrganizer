@@ -829,11 +829,14 @@ class MainWindow(QMainWindow):
             QApplication.setOverrideCursor(Qt.WaitCursor)
             try:
                 backup_dir = rbdb.backup(db, steps)
-                done = rbdb.apply(db, steps, journal)
+                warnings: list[str] = []
+                done = rbdb.apply(db, steps, journal, warnings)
                 problems = rbdb.verify(db, steps)
             finally:
                 QApplication.restoreOverrideCursor()
             self.append_log(f"Rekordbox: {done} Tracks umgestellt, Sicherung: {backup_dir}")
+            for w in warnings:
+                self.append_log("  Hinweis: " + w)
             if problems:
                 self._show_text("Rekordbox umstellen – Probleme",
                                 f"{done} umgestellt, aber {len(problems)} Probleme:\n\n" + "\n".join(problems[:50])
@@ -842,6 +845,7 @@ class MainWindow(QMainWindow):
                 QMessageBox.information(self, "Rekordbox umstellen",
                                         f"{done} Tracks umgestellt und geprüft ✔\nRekordbox kann wieder gestartet werden.")
         except Exception as e:
+            self.append_log("Rekordbox umstellen – Fehler:\n" + traceback.format_exc())
             QMessageBox.critical(self, "Rekordbox umstellen", f"Fehler: {e}\n\nNichts wurde gespeichert, "
                                  "oder die Sicherung kann über das Menü zurückgespielt werden.")
         finally:

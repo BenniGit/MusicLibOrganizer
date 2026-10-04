@@ -157,3 +157,27 @@ def test_old_duplicate_with_counter_is_found(tmp_path):
     (step,) = rbdb.plan(db, j)
     db.close()
     assert (step.action, step.old, step.new) == (rbdb.SWITCH, str(first), str(second))
+
+
+def test_switch_rewrites_rekordbox7_analysis_files(setup, capsys):
+    """Rekordbox-7-Analysen mit neuem Beatgrid-Format (pyrekordbox kann sie nicht lesen)."""
+    from tests.test_anlz_path import make_anlz
+
+    tmp, db_path, a_old, a_new, _ = setup
+    db = rbdb.open_db(db_path)
+    anlz_dir = db.get_anlz_dir(db.get_content(ID="1"))
+    db.close()
+    rest = {}
+    for suffix in ("DAT", "EXT", "2EX"):
+        rest[suffix] = make_anlz(anlz_dir / f"ANLZ0000.{suffix}", str(a_old))
+    args = ["--db", str(db_path), "--journal", str(tmp / "umzug.sqlite")]
+    assert main(args + ["umstellen", "--anwenden", "--sicherungen", str(tmp / "bak")]) == 0
+    assert "Alles geprüft" in capsys.readouterr().out
+    from musiclib import anlz_path
+    for suffix in ("DAT", "EXT", "2EX"):
+        f = anlz_dir / f"ANLZ0000.{suffix}"
+        assert anlz_path.read_path(f) == str(a_new) and f.read_bytes().endswith(rest[suffix])
+
+    # Sicherung enthält die alten Analyse-Dateien und spielt sie zurück
+    assert main(args + ["zurueck", "--sicherungen", str(tmp / "bak")]) == 0
+    assert anlz_path.read_path(anlz_dir / "ANLZ0000.2EX") == str(a_old)

@@ -68,9 +68,12 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         backup_dir = rbdb.backup(db, steps, args.sicherungen)
         print(f"\nSicherung: {backup_dir}")
-        n = rbdb.apply(db, steps, journal)
+        warnings: list[str] = []
+        n = rbdb.apply(db, steps, journal, warnings)
         problems = rbdb.verify(db, steps)
         print(f"{n} Tracks umgestellt.")
+        for w in warnings[:20]:
+            print("  Hinweis:", w)
         if problems:
             print(f"⚠ {len(problems)} Probleme:")
             for p in problems[:20]:
