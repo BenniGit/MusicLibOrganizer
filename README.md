@@ -101,6 +101,12 @@ musiclib-rekordbox zurueck                 # letzte Sicherung zurückspielen
 
 **Menü Datei → Library prüfen…** (oder im Terminal `musiclib-pruefen ~/Nextcloud/Music/LibOrganized --rekordbox`) liest die sortierte Library und Rekordbox nur und listet, was auffällt: fehlende Angaben und Cover, MP3s unter 320 kbit/s, Schreibvarianten (z. B. „Fisher“/„FISHER“, „Tech House“/„Tech-House“ – teilen Ordner auf), mögliche Duplikate, uneinheitliche Release-Ordner, doppelte Tracknummern, zu lange Pfade, leere Ordner, Rekordbox-Einträge ohne Datei und Dateien, die nicht in Rekordbox sind. Der Bericht wird unter `~/Library/Application Support/MusicLibOrganizer/berichte/` gespeichert.
 
+## Schreibweisen vereinheitlichen
+
+**Menü Datei → Schreibweisen vereinheitlichen…** findet Namen, die in der Ziel-Library unterschiedlich geschrieben sind („Omar-S“/„Omar S“, „K7 Records“/„!K7 Records“, „Tech House“/„Tech-House“, unsichtbare Zeichen oder zerlegte Umlaute) sowie den Discogs-Platzhalter „Not On Label“ (→ „Self-Released“). Pro Zeile wählst du die richtige Schreibweise; nach einer Vorschau werden die Tags neu geschrieben, Ordner und Dateinamen angepasst und alle Umbenennungen ins Umzugs-Journal eingetragen. Anschließend stellt die App auf Wunsch Rekordbox um (Sterne, Cues, Playlists bleiben). Alle alten Werte stehen im Protokoll unter `~/Library/Application Support/MusicLibOrganizer/vereinheitlichen/`.
+
+Damit Rekordbox auch die neuen Namen anzeigt: die betroffenen Tracks markieren → Rechtsklick → „Tag-Informationen neu laden“.
+
 ## Test-Werkzeug: Energie schätzen (experimentell)
 
 Misst bei jedem Track Hi-Hat/Percussion-Aktivität, Bewegung im Spektrum, Helligkeit, Bass-Anteil, Dynamik und BPM

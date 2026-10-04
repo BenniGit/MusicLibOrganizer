@@ -7,7 +7,7 @@ import string
 from datetime import date
 from pathlib import Path
 
-from .models import LibraryItem
+from .models import LibraryItem, no_label
 from .tagger import clean_text, format_key
 
 from .settings import DEFAULT_TEMPLATE  # noqa: F401  (Re-Export)
@@ -69,7 +69,7 @@ def fields_for(item: LibraryItem, key_format: str = "camelot", label_fallback: s
             "title": bp.name,
             "mix": bp.mix,
             "genre": bp.genre or UNKNOWN_GENRE,
-            "label": bp.label or label_fallback,
+            "label": label_fallback if no_label(bp.label) else bp.label,
             "album": bp.release,
             "year": bp.release_date[:4],
             "bpm": str(bp.bpm or ""),

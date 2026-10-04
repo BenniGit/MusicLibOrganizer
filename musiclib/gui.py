@@ -218,6 +218,9 @@ class MainWindow(QMainWindow):
         a = QAction("Library prüfen…", self)
         a.triggered.connect(self.check_library)
         m.addAction(a)
+        a = QAction("Schreibweisen vereinheitlichen…", self)
+        a.triggered.connect(self.unify_spellings)
+        m.addAction(a)
         a = QAction("Beenden", self)
         a.setShortcut(QKeySequence.Quit)
         a.triggered.connect(self.close)
@@ -751,6 +754,73 @@ class MainWindow(QMainWindow):
             result.append(text)
 
         self.run_worker(job, lambda: result and self._show_text("Library-Prüfung", result[0]))
+
+    def unify_spellings(self) -> None:
+        """Namen wie „Omar-S“/„Omar S“ oder „Not On Label“ in der Ziel-Library vereinheitlichen."""
+        if self.busy():
+            return
+        root = Path(self.dst_edit.text())
+        if not root.is_dir():
+            QMessageBox.warning(self, "Schreibweisen", "Bitte oben die Ziel-Bibliothek wählen.")
+            return
+        found: list = []
+
+        def scan_job(w: Worker):
+            from . import audit, unify
+
+            w.log.emit(f"Suche Schreibvarianten in {root} …")
+            files = audit.collect(root, lambda i, n, p: w.progress.emit(i, n, p.name))
+            found.append((files, unify.find_rules(files, self.settings.label_fallback)))
+
+        self.run_worker(scan_job, lambda: found and self._unify_choose(root, *found[0]))
+
+    def _unify_choose(self, root: Path, files: list, rules: list) -> None:
+        from . import unify
+        from .unify_dialog import UnifyDialog
+
+        if not rules:
+            QMessageBox.information(self, "Schreibweisen", "Keine unterschiedlichen Schreibweisen gefunden ✔")
+            return
+        dlg = UnifyDialog(self, rules)
+        if dlg.exec() != QDialog.Accepted:
+            return
+        changes = unify.plan(root, files, dlg.result_rules())
+        if not changes:
+            QMessageBox.information(self, "Schreibweisen", "Nichts zu ändern.")
+            return
+        text = unify.summary(changes)
+        if QMessageBox.question(self, "Schreibweisen vereinheitlichen", text + "\n\nJetzt ausführen?") != QMessageBox.Yes:
+            return
+        result: list = []
+
+        def job(w: Worker):
+            journal = Journal()
+            try:
+                result.append(unify.apply(root, changes, journal, lambda i, n, name: w.progress.emit(i, n, name)))
+            finally:
+                journal.close()
+            ok, problems, log = result[0]
+            w.log.emit(f"Schreibweisen: {ok} Dateien geändert, Protokoll mit allen alten Werten: {log}")
+            for p in problems:
+                w.log.emit("  ✘ " + p)
+
+        self.run_worker(job, lambda: result and self._unify_done(changes, *result[0]))
+
+    def _unify_done(self, changes: list, ok: int, problems: list[str], log: Path) -> None:
+        moved = sum(c.moves for c in changes)
+        msg = (f"{ok} Dateien geändert, {moved} davon umbenannt/verschoben."
+               + (f"\n⚠ {len(problems)} Probleme – siehe Log unten." if problems else ""))
+        if moved:
+            msg += ("\n\nDamit Rekordbox die umbenannten Dateien findet, jetzt Rekordbox umstellen? "
+                    "(Rekordbox muss dafür beendet sein.)")
+            if QMessageBox.question(self, "Schreibweisen", msg) == QMessageBox.Yes:
+                self.rekordbox_switch()
+        else:
+            QMessageBox.information(self, "Schreibweisen", msg)
+        self.append_log("Tipp: In Rekordbox die geänderten Tracks markieren → Rechtsklick → "
+                        "„Tag-Informationen neu laden“, damit die neuen Namen auch dort erscheinen.")
+        if self.items:
+            self.append_log("Hinweis: Die Liste oben zeigt noch den alten Stand – bei Bedarf neu scannen.")
 
     # ------------------------------------------------------------ Einstellungen
     def open_settings(self) -> None:

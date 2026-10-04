@@ -9,6 +9,11 @@ LOSSLESS_EXTENSIONS = {".flac", ".wav", ".aiff", ".aif"}
 SUPPORTED_EXTENSIONS = {".mp3"} | LOSSLESS_EXTENSIONS
 
 
+def no_label(label: str) -> bool:
+    """Leeres Label oder Platzhalter wie Discogs' „Not On Label (… Self-released)“."""
+    return not label.strip() or label.strip().lower().startswith("not on label")
+
+
 @dataclass
 class LocalTrack:
     """Eine Audiodatei aus der lokalen Bibliothek mit ihren vorhandenen Tags."""

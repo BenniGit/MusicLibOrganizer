@@ -8,7 +8,7 @@ from typing import Callable
 
 from .converter import to_mp3
 from .covers import existing_cover
-from .models import LibraryItem, TrackMeta
+from .models import LibraryItem, TrackMeta, no_label
 from .backup import backup_tags
 from .tagger import TagOptions, kept_frames, write_tags
 
@@ -94,7 +94,7 @@ def apply_item(item: LibraryItem, opts: ApplyOptions, cover_loader: Callable[[Tr
 
     if item.selected:
         meta = item.selected
-        if not meta.label.strip() and opts.label_fallback.strip():
+        if no_label(meta.label) and opts.label_fallback.strip():
             meta = replace(meta, label=opts.label_fallback.strip())
         cover = item.cover
         if cover is None and opts.tag.embed_cover and cover_loader and meta.image_url:
