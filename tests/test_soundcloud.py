@@ -88,6 +88,33 @@ def test_as_unofficial_fills_required_fields(tmp_path):
 
 def test_as_unofficial_keeps_existing_values(tmp_path):
     base = TrackMeta(id=1, name="Song", mix="", artists=["A"], release="EP", label="Real Label",
-                     release_date="2020-01-01", track_number=3, track_total=4)
+                     release_date="2020-01-01", track_number=3, track_total=4, source="Manuell")
     m = as_unofficial(LocalTrack(tmp_path / "x.mp3"), base, "Bootleg")
     assert (m.release, m.label, m.release_date, m.track_number, m.track_total) == ("EP", "Real Label", "2020-01-01", 3, 4)
+
+
+def test_as_unofficial_from_original_beatport_release(tmp_path):
+    f = tmp_path / "Fisher - Losing It (Someone Bootleg).mp3"
+    f.write_bytes(b"x")
+    ts = time.mktime((2023, 5, 6, 12, 0, 0, 0, 0, -1))
+    os.utime(f, (ts, ts))
+    original = TrackMeta(id=99, name="Losing It", mix="Original Mix", artists=["FISHER"], release="Losing It",
+                         label="Catch & Release", catalog_number="CR001", isrc="AU123", genre="Tech House",
+                         bpm=125, key_camelot="8A", release_date="2018-07-13", track_number=1, track_total=2,
+                         release_id="5", image_url="https://x/{w}x{h}.jpg", url="https://beatport/x")
+    local = LocalTrack(f, artist="Fisher", title="Losing It", mix="Someone Bootleg")
+    m = as_unofficial(local, original, "Bootleg")
+    assert (m.artist, m.name, m.mix, m.remixers, m.genre, m.bpm) == (
+        "FISHER", "Losing It", "Someone Bootleg", ["Someone"], "Tech House", 125)
+    assert (m.release, m.album_artist, m.label, m.release_date, m.track_number, m.track_total) == (
+        "Losing It (Someone Bootleg)", "FISHER", "Bootleg", "2023-05-06", 1, 1)
+    assert (m.isrc, m.catalog_number, m.source, m.url, m.image_url) == ("", "", "Manuell", "", "")
+
+
+def test_remixer_from_mix():
+    from musiclib.manual import remixer_from_mix
+
+    assert remixer_from_mix("Someone Bootleg") == "Someone"
+    assert remixer_from_mix("DJ X Edit") == "DJ X"
+    assert remixer_from_mix("Extended Mix") == ""
+    assert remixer_from_mix("Original Mix") == ""

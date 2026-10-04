@@ -591,8 +591,8 @@ class MainWindow(QMainWindow):
             it = self.items[r]
             if it.status == MatchStatus.DONE:
                 continue
-            # Ein vorhandener Treffer wird nur weiterverwendet, wenn er bestätigt bzw. bearbeitet ist
-            base = it.selected if it.status == MatchStatus.MANUAL else None
+            # Ein sicherer oder bestätigter Treffer (z. B. das Original bei Beatport) liefert Artist, Titel und Genre
+            base = it.selected if it.status in (MatchStatus.MANUAL, MatchStatus.MATCHED) else None
             it.selected = as_unofficial(it.local, base, self.settings.unofficial_label)
             it.status, it.enabled = MatchStatus.MANUAL, True
             it.message = "als inoffiziell erfasst"
