@@ -8,7 +8,7 @@ from datetime import date
 from pathlib import Path
 
 from .models import LibraryItem
-from .tagger import format_key
+from .tagger import clean_text, format_key
 
 from .settings import DEFAULT_TEMPLATE  # noqa: F401  (Re-Export)
 
@@ -28,7 +28,7 @@ _MIN_STEM, _MIN_DIR = 40, 20  # so weit wird höchstens gekürzt
 
 
 def sanitize(component: str) -> str:
-    s = _INVALID.sub("_", component)
+    s = _INVALID.sub("_", clean_text(component))
     s = _EMPTY_BRACKETS.sub("", s)
     s = re.sub(r"\s+", " ", s)
     s = _DOUBLE_SEP.sub(" - ", s)  # leere Platzhalter zwischen " - " entfernen

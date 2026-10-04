@@ -40,7 +40,14 @@ def main(argv: list[str] | None = None) -> int:
             rb = audit.rekordbox_paths(args.db)
         except Exception as e:
             print(f"Rekordbox konnte nicht gelesen werden: {e}", file=sys.stderr)
-    text = audit.render(audit.build_report(root, files, rb, args.alt.expanduser() if args.alt else None))
+    migrated = None
+    if args.alt:
+        from .journal import Journal
+
+        j = Journal()
+        migrated = {m.src for m in j.all()}
+        j.close()
+    text = audit.render(audit.build_report(root, files, rb, args.alt.expanduser() if args.alt else None, migrated))
     out = args.bericht or data_dir() / "berichte" / f"library-{datetime.now():%Y-%m-%d_%H-%M}.txt"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(text, encoding="utf-8")

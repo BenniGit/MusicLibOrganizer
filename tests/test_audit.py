@@ -59,3 +59,29 @@ def test_cli_writes_report(tmp_path, capsys):
     out = tmp_path / "bericht.txt"
     assert main([str(lib), "--bericht", str(out)]) == 0
     assert "Kurzfassung" in out.read_text() and "Bericht gespeichert" in capsys.readouterr().out
+
+
+@needs_ffmpeg
+def test_streaming_sampler_unicode_and_old_library(tmp_path):
+    import unicodedata
+
+    base = make_audio(tmp_path / "src" / "base.mp3")
+    lib, old = tmp_path / "lib", tmp_path / "old"
+    nfc, nfd = "Felix Kröcher", unicodedata.normalize("NFD", "Felix Kröcher")
+    a = tagged(lib / "F" / "1" / "01.mp3", base, nfc, "A", "A", nfc, "L", "Techno", "2020", "1/1")
+    tagged(lib / "F" / "2" / "01.mp3", base, nfd, "B", "B", nfd, "L", "Techno", "2020", "1/1")
+    done = make_audio(old / "done.mp3")
+    make_audio(old / "vergessen.mp3")
+    rb = [str(a), "soundcloud:tracks:123", "/Users/b/Music/rekordbox/Sampler/X/House1.wav"]
+    text = audit.render(audit.build_report(lib, audit.collect(lib), rb, old, migrated={str(done)}))
+    assert "unsichtbares Zeichen" in text
+    assert "Datei fehlt" not in text and "außerhalb" not in text
+    assert "1 Streaming-Einträge" in text and "1 mitgelieferte Sampler-Sounds" in text
+    assert "nie in die neue Library übernommen: 1" in text and "vergessen.mp3" in text
+
+
+def test_clean_text():
+    from musiclib.tagger import clean_text
+
+    assert clean_text("Demi ﻿Riquísimo ") == "Demi Riquísimo"
+    assert clean_text("Kröcher") == "Kröcher"

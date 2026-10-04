@@ -102,10 +102,15 @@ def _variants(values: list[str]) -> list[str]:
     for v in values:
         if v.strip():
             groups[normalize(v)][v.strip()] += 1
+    from .tagger import clean_text
+
     out = []
     for spellings in groups.values():
         if len(spellings) > 1:
-            out.append("  |  ".join(f"{s} ({n})" for s, n in spellings.most_common()))
+            line = "  |  ".join(f"{s} ({n})" for s, n in spellings.most_common())
+            if len({clean_text(s) for s in spellings}) == 1:
+                line += "   ← nur unsichtbares Zeichen / andere Umlaut-Kodierung"
+            out.append(line)
     return sorted(out, key=str.lower)
 
 
@@ -114,7 +119,8 @@ def _artists(value: str) -> list[str]:
 
 
 def build_report(root: Path, files: list[FileInfo], rekordbox_paths: list[str] | None = None,
-                 old_root: Path | None = None) -> Report:
+                 old_root: Path | None = None, migrated: set[str] | None = None) -> Report:
+    """``migrated``: Quellpfade aus dem Umzugs-Journal (welche alten Dateien übernommen wurden)."""
     r = Report()
     n = len(files)
     r.add(f"Library-Prüfung {datetime.now():%d.%m.%Y %H:%M} – {root}")
@@ -274,18 +280,30 @@ def build_report(root: Path, files: list[FileInfo], rekordbox_paths: list[str] |
         r.section(f"Alte Library ({old_root})")
         old_files = list(iter_audio_files(old_root))
         r.add(f"Noch {len(old_files)} Audiodateien im alten Ordner.")
+        if migrated is not None:
+            todo = [_rel(old_root, p) for p in old_files if _nfc(p) not in migrated]
+            if todo:
+                r.add(f"Davon nie in die neue Library übernommen: {len(todo)}")
+                r.examples(todo, 30)
+                r.hints.append(f"{len(todo)} Dateien der alten Library wurden nie übernommen")
+            else:
+                r.add("Alle wurden übernommen ✔ – der alte Ordner kann nach einer Sicherung weg.")
 
     # --- Rekordbox
     if rekordbox_paths is not None:
         r.section("Rekordbox")
-        rb = {_nfc(p) for p in rekordbox_paths if p}
+        streaming = [p for p in rekordbox_paths if p and not p.startswith("/")]  # z. B. soundcloud:tracks:123
+        sampler = [p for p in rekordbox_paths if "/rekordbox/Sampler/" in p]
+        rb = {_nfc(p) for p in rekordbox_paths if p and p.startswith("/") and "/rekordbox/Sampler/" not in p}
         lib = {_nfc(f.path) for f in files}
         root_nfc = _nfc(root).rstrip("/") + "/"
         missing = sorted(p for p in rb if not Path(p).exists())
         outside = sorted(p for p in rb if not p.startswith(root_nfc) and Path(p).exists()
                          and Path(p).suffix.lower() in SUPPORTED_EXTENSIONS)
         not_imported = sorted(lib - rb)
-        r.add(f"{len(rb)} Tracks in Rekordbox, davon {len(rb & lib)} aus der neuen Library.")
+        r.add(f"{len(rb)} Dateien in Rekordbox, davon {len(rb & lib)} aus der neuen Library"
+              + (f"; außerdem {len(streaming)} Streaming-Einträge (SoundCloud/Beatport Streaming …)" if streaming else "")
+              + (f" und {len(sampler)} mitgelieferte Sampler-Sounds" if sampler else "") + " – ignoriert.")
         if missing:
             r.add(f"Datei fehlt (Rekordbox zeigt „!“): {len(missing)}")
             r.examples(missing, 20)

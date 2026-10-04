@@ -1,6 +1,7 @@
 """Schreibt Beatport-Metadaten als ID3v2.4-Tags in MP3-Dateien."""
 from __future__ import annotations
 
+import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -66,6 +67,15 @@ def kept_frames(src: Path, keys: set[str]) -> list[Frame]:
     return frames
 
 
+_INVISIBLE = dict.fromkeys(map(ord, "\ufeff\u200b\u200c\u200d\u2060\u00ad"), None)
+
+
+def clean_text(value: str) -> str:
+    """Einheitliche Unicode-Schreibweise (NFC) ohne unsichtbare Zeichen – sonst sind
+    „Kröcher“ und „Kröcher“ für Rekordbox und Finder zwei verschiedene Namen."""
+    return unicodedata.normalize("NFC", value).translate(_INVISIBLE).strip()
+
+
 def write_tags(path: Path, track: TrackMeta, opts: TagOptions, cover: bytes | None = None,
                keep: list[Frame] | None = None, comment_tags: list[str] | None = None) -> None:
     """Schreibt die Metadaten. ``comment_tags`` (ohne '#') landen als '#tag #tag' im Kommentar;
@@ -87,6 +97,7 @@ def write_tags(path: Path, track: TrackMeta, opts: TagOptions, cover: bytes | No
 
     def put(frame_cls, value, **kw):
         tags.delall(frame_cls.__name__ if not kw.get("desc") else f"{frame_cls.__name__}:{kw['desc']}")
+        value = clean_text(value) if isinstance(value, str) else value
         if value not in (None, ""):
             tags.add(frame_cls(encoding=3, text=[str(value)], **kw))
 

@@ -740,7 +740,10 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 rb = None
                 w.log.emit(f"Rekordbox nicht geprüft: {e}")
-            text = audit.render(audit.build_report(root, files, rb, old if old and old != root else None))
+            j = Journal()
+            migrated = {m.src for m in j.all()}
+            j.close()
+            text = audit.render(audit.build_report(root, files, rb, old if old and old != root else None, migrated))
             out = data_dir() / "berichte" / f"library-{datetime.now():%Y-%m-%d_%H-%M}.txt"
             out.parent.mkdir(parents=True, exist_ok=True)
             out.write_text(text, encoding="utf-8")
