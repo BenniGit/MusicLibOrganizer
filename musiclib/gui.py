@@ -215,6 +215,9 @@ class MainWindow(QMainWindow):
         a.setShortcut(QKeySequence.Preferences)
         a.triggered.connect(self.open_settings)
         m.addAction(a)
+        a = QAction("Library prüfen…", self)
+        a.triggered.connect(self.check_library)
+        m.addAction(a)
         a = QAction("Beenden", self)
         a.setShortcut(QKeySequence.Quit)
         a.triggered.connect(self.close)
@@ -712,6 +715,39 @@ class MainWindow(QMainWindow):
                         + (" (Cover gesetzt)" if dlg.cover_changed and dlg.cover else "")
                         + (f", {skipped} bereits übernommene übersprungen" if skipped else ""))
         self.refresh_targets()
+
+    def check_library(self) -> None:
+        """Bericht über die Ziel-Library (und Rekordbox) – ändert nichts."""
+        if self.busy():
+            return
+        root = Path(self.dst_edit.text())
+        if not root.is_dir():
+            QMessageBox.warning(self, "Library prüfen", "Bitte oben die Ziel-Bibliothek wählen.")
+            return
+        old = Path(self.src_edit.text()) if self.src_edit.text() else None
+        result: list[str] = []
+
+        def job(w: Worker):
+            from datetime import datetime
+
+            from . import audit
+            from .backup import data_dir
+
+            w.log.emit(f"Prüfe {root} …")
+            files = audit.collect(root, lambda i, n, p: w.progress.emit(i, n, p.name))
+            try:
+                rb = audit.rekordbox_paths()
+            except Exception as e:
+                rb = None
+                w.log.emit(f"Rekordbox nicht geprüft: {e}")
+            text = audit.render(audit.build_report(root, files, rb, old if old and old != root else None))
+            out = data_dir() / "berichte" / f"library-{datetime.now():%Y-%m-%d_%H-%M}.txt"
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_text(text, encoding="utf-8")
+            w.log.emit(f"Bericht gespeichert: {out}")
+            result.append(text)
+
+        self.run_worker(job, lambda: result and self._show_text("Library-Prüfung", result[0]))
 
     # ------------------------------------------------------------ Einstellungen
     def open_settings(self) -> None:

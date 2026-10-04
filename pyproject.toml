@@ -23,6 +23,7 @@ ki = ["essentia-tensorflow"]  # KI-Analyse für musiclib-energie --ki (macOS 15+
 [project.scripts]
 musiclib-energie = "musiclib.energy_cli:main"
 musiclib-rekordbox = "musiclib.rekordbox_cli:main"
+musiclib-pruefen = "musiclib.audit_cli:main"
 
 [project.gui-scripts]
 musiclib-organizer = "musiclib.gui:main"

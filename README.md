@@ -97,6 +97,10 @@ musiclib-rekordbox zurueck                 # letzte Sicherung zurückspielen
 - **Tags & Pflichtfelder** – Key-Format (Camelot/Tonart), Mix-Name im Titel, Cover, vorhandene Tags ersetzen (an/aus), welche Felder Pflicht sind (Standard: Artist, Titel, Album-Artist, Tracknummer, Album, Genre, Label, Jahr) und ein **Ersatz-Label** (Standard „Self-Released“) für Tracks ohne Label.
 - **Quellen** – Beatport-Zugang, Discogs-Token, Bandcamp an/aus, Schwellen für „gefunden“ und „100 %-Übernahme“.
 
+## Library prüfen
+
+**Menü Datei → Library prüfen…** (oder im Terminal `musiclib-pruefen ~/Nextcloud/Music/LibOrganized --rekordbox`) liest die sortierte Library und Rekordbox nur und listet, was auffällt: fehlende Angaben und Cover, MP3s unter 320 kbit/s, Schreibvarianten (z. B. „Fisher“/„FISHER“, „Tech House“/„Tech-House“ – teilen Ordner auf), mögliche Duplikate, uneinheitliche Release-Ordner, doppelte Tracknummern, zu lange Pfade, leere Ordner, Rekordbox-Einträge ohne Datei und Dateien, die nicht in Rekordbox sind. Der Bericht wird unter `~/Library/Application Support/MusicLibOrganizer/berichte/` gespeichert.
+
 ## Test-Werkzeug: Energie schätzen (experimentell)
 
 Misst bei jedem Track Hi-Hat/Percussion-Aktivität, Bewegung im Spektrum, Helligkeit, Bass-Anteil, Dynamik und BPM
