@@ -33,6 +33,7 @@ from .urlimport import assign_release, load_url, looks_like_url
 from .models import LibraryItem, MatchStatus
 from .organizer import assign_targets, validate_template
 from .pipeline import ApplyOptions, apply_item, make_cover_loader
+from .releases import CONFLICT, harmonize
 from .scanner import scan
 from .settings import AppSettings, effective_meta, effective_tags, missing_fields
 from .tagger import TagOptions
@@ -232,7 +233,8 @@ class MainWindow(QMainWindow):
                               ("Keine markieren", self.check_none, "Ctrl+Shift+D"),
                               ("Markierung umkehren", self.check_invert, None),
                               ("Nur Bereite markieren", lambda: self.set_enabled(self.is_auto_ready), None),
-                              ("Alle unsicheren Treffer bestätigen", self.confirm_all_uncertain, None)):
+                              ("Alle unsicheren Treffer bestätigen", self.confirm_all_uncertain, None),
+                              ("EPs/Alben auf ein Release angleichen", lambda: self.harmonize_releases(), None)):
             a = QAction(text, self)
             a.triggered.connect(fn)
             if key:
@@ -466,7 +468,7 @@ class MainWindow(QMainWindow):
 
     def confirm_all_uncertain(self) -> None:
         for i in self.items:
-            if i.status == MatchStatus.UNCERTAIN and i.selected:
+            if i.status == MatchStatus.UNCERTAIN and i.selected and not i.message.startswith(CONFLICT):
                 i.status = MatchStatus.MANUAL
                 i.message = "unsicheren Treffer bestätigt"
         self.refresh_targets()
@@ -631,7 +633,29 @@ class MainWindow(QMainWindow):
                 self.refresh_targets()
                 self.edit_metadata(row)
                 return
+            self.harmonize_releases(sources, only=item)
+            return
         self.refresh_targets()
+
+    def harmonize_releases(self, sources: list | None = None, only: LibraryItem | None = None) -> None:
+        """Tracks einer EP/eines Albums auf dasselbe Release (dieselbe Quelle) bringen."""
+        if self.busy():
+            return
+        try:
+            sources = sources if sources is not None else self.sources()
+        except Exception as e:
+            QMessageBox.warning(self, "Quellen", str(e))
+            return
+        thr = self.settings.match_threshold
+
+        def job(w: Worker):
+            lines = harmonize(self.items, sources, thr, only=only, cancelled=lambda: w.cancelled)
+            for line in lines:
+                w.log.emit(line)
+            if only is None and not lines:
+                w.log.emit("Alle EPs/Alben kommen jeweils aus einem Release ✔")
+
+        self.run_worker(job, self.refresh_targets)
 
     def edit_metadata(self, row: int) -> None:
         if self.busy():
@@ -845,6 +869,10 @@ class MainWindow(QMainWindow):
                 if it.message:
                     w.log.emit(f"{it.local.path.name}: {it.message}")
                 w.item_done.emit(row)
+            if not w.cancelled:
+                w.log.emit("Prüfe, ob EPs/Alben einheitlich aus einem Release kommen …")
+                for line in harmonize(self.items, sources, thr, cancelled=lambda: w.cancelled):
+                    w.log.emit(line)
             w.log.emit("Abgleich fertig.")
 
         self.run_worker(job, self.refresh_targets)
