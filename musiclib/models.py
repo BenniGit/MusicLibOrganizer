@@ -153,3 +153,4 @@ class LibraryItem:
     message: str = ""
     keep_tags: set[str] = field(default_factory=set)  # vorhandene Tags, die erhalten bleiben sollen
     tags: list[str] | None = None  # eigene #Tags; None = unverändert aus der Datei übernehmen
+    previous: Path | None = None  # frühere Version in der neuen Library, wird beim erneuten Bearbeiten ersetzt

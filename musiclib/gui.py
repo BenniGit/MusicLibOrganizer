@@ -703,6 +703,8 @@ class MainWindow(QMainWindow):
                 it.status, it.enabled, it.target = MatchStatus.DONE, False, Path(dst)
                 it.message = "bereits in die neue Library übernommen"
                 n += 1
+            elif journal.is_target(it.local.path):
+                it.previous = it.local.path  # Datei aus der neuen Library: wird beim Bearbeiten ersetzt
         journal.close()
         if n:
             self.append_log(f"{n} Dateien wurden schon früher übernommen und sind als „erledigt“ markiert "
@@ -712,6 +714,8 @@ class MainWindow(QMainWindow):
         for r in rows:
             it = self.items[r]
             if it.status == MatchStatus.DONE:
+                if it.target and it.target.exists():
+                    it.previous = it.target  # wird nach dem erneuten Ausführen ersetzt, nicht verdoppelt
                 it.status = MatchStatus.MANUAL if it.selected else MatchStatus.PENDING
                 it.enabled, it.message = True, "erneut bearbeiten"
         self.refresh_targets()
@@ -750,7 +754,7 @@ class MainWindow(QMainWindow):
             steps = rbdb.plan(db, journal)
             n = sum(s.action == rbdb.SWITCH for s in steps)
             if not n:
-                journal.mark_switched([s.old for s in steps if s.action == rbdb.ALREADY])
+                journal.mark_switched([s.key or s.old for s in steps if s.action == rbdb.ALREADY])
                 self._show_text("Rekordbox umstellen", "Nichts umzustellen.\n\n" + rbdb.summary(steps))
                 return
             msg = (f"{n} Tracks in Rekordbox auf die neue Library umstellen?\n\n"

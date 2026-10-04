@@ -146,7 +146,8 @@ def assign_targets(items: list[LibraryItem], target_root: Path, template: str, k
         base = target_path(item, target_root, template, key_format, label_fallback)
         candidate = base
         n = 2
-        while candidate.as_posix().lower() in taken or (candidate.exists() and candidate.resolve() != item.local.path.resolve()):
+        own = {item.local.path.resolve()} | ({item.previous.resolve()} if item.previous else set())
+        while candidate.as_posix().lower() in taken or (candidate.exists() and candidate.resolve() not in own):
             candidate = base.with_name(f"{base.stem} ({n}){base.suffix}")
             n += 1
         taken.add(candidate.as_posix().lower())

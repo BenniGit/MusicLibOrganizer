@@ -61,7 +61,7 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if not any(s.action == rbdb.SWITCH for s in steps):
             print("\nNichts umzustellen.")
-            journal.mark_switched([s.old for s in steps if s.action == rbdb.ALREADY])
+            journal.mark_switched([s.key or s.old for s in steps if s.action == rbdb.ALREADY])
             return 0
         if rbdb.rekordbox_running():
             print("\nRekordbox läuft noch – bitte beenden und erneut starten.")

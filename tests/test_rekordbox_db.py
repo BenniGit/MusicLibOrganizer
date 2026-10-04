@@ -105,3 +105,55 @@ def test_journal_roundtrip(tmp_path):
     assert j.target_for(Path("/a/x.mp3")) == "/b/z.mp3" and len(j.all()) == 1
     j.forget(Path("/a/x.mp3"))
     assert j.target_for(Path("/a/x.mp3")) is None
+
+
+def test_reprocessed_track_is_switched_again(setup, capsys):
+    """Übernehmen → umstellen → erneut bearbeiten (neues Ziel) → nochmal umstellen."""
+    tmp, db_path, a_old, a_new, _ = setup
+    args = ["--db", str(db_path), "--journal", str(tmp / "umzug.sqlite")]
+    assert main(args + ["umstellen", "--anwenden", "--sicherungen", str(tmp / "bak")]) == 0
+
+    # Erneut bearbeitet: neues Ziel, alte Version entfernt
+    a_newer = touch(tmp / "LibOrganized" / "A" / "2021 - Song [Label]" / "01 - A - Song.mp3")
+    a_new.unlink()
+    j = Journal(tmp / "umzug.sqlite")
+    j.record(a_old, a_newer)
+    j.close()
+    capsys.readouterr()
+
+    db = rbdb.open_db(db_path)
+    step = next(s for s in rbdb.plan(db, Journal(tmp / "umzug.sqlite")) if s.content_id == "1")
+    db.close()
+    assert (step.action, step.old, step.new) == (rbdb.SWITCH, str(a_new), str(a_newer))
+
+    assert main(args + ["umstellen", "--anwenden", "--sicherungen", str(tmp / "bak2")]) == 0
+    assert "1 Tracks umgestellt" in capsys.readouterr().out
+    db = rbdb.open_db(db_path)
+    c = db.get_content(ID="1")
+    assert (c.FolderPath, c.Rating, c.StockDate) == (str(a_newer), 4, "2023-01-20")
+    db.close()
+    assert next(m for m in Journal(tmp / "umzug.sqlite").all() if m.src == str(a_old)).switched
+
+
+def test_journal_keeps_previous_targets(tmp_path):
+    j = Journal(tmp_path / "j.sqlite")
+    j.record(Path("/a/x.mp3"), Path("/b/y.mp3"))
+    j.record(Path("/a/x.mp3"), Path("/b/z.mp3"))
+    # Datei aus der neuen Library erneut bearbeitet -> ursprünglicher Eintrag wird fortgeschrieben
+    assert j.is_target(Path("/b/z.mp3"))
+    j.record(Path("/b/z.mp3"), Path("/b/w.mp3"))
+    (m,) = j.all()
+    assert (m.src, m.dst, m.prev) == ("/a/x.mp3", "/b/w.mp3", ["/b/y.mp3", "/b/z.mp3"])
+
+
+def test_old_duplicate_with_counter_is_found(tmp_path):
+    """Ältere Version legte erneut Bearbeitetes als „… (2).mp3“ ab, Rekordbox zeigt noch auf das erste."""
+    first = touch(tmp_path / "new" / "01 - A - Song.mp3")
+    second = touch(tmp_path / "new" / "01 - A - Song (2).mp3")
+    db_path = make_db(tmp_path, [{"ID": "1", "FolderPath": str(first), "Title": "Song", "Rating": 4}])
+    j = Journal(tmp_path / "umzug.sqlite")
+    j.record(tmp_path / "old" / "A - Song.mp3", second)
+    db = rbdb.open_db(db_path)
+    (step,) = rbdb.plan(db, j)
+    db.close()
+    assert (step.action, step.old, step.new) == (rbdb.SWITCH, str(first), str(second))

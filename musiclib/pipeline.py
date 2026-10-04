@@ -12,6 +12,46 @@ from .backup import backup_tags
 from .tagger import TagOptions, kept_frames, write_tags
 
 
+def move_to_trash(path: Path) -> None:
+    """In den Papierkorb (wiederherstellbar); ohne Papierkorb wird gelöscht."""
+    try:
+        from PySide6.QtCore import QFile
+
+        if QFile.moveToTrash(str(path)):
+            return
+    except Exception:
+        pass
+    path.unlink()
+
+
+def remove_empty_dirs(directory: Path, levels: int = 2) -> None:
+    """Leer gewordene Release-/Artist-Ordner entfernen (.DS_Store zählt nicht als Inhalt)."""
+    for _ in range(levels):
+        try:
+            entries = list(directory.iterdir())
+        except OSError:
+            return
+        if any(e.name != ".DS_Store" for e in entries):
+            return
+        for e in entries:
+            e.unlink()
+        directory.rmdir()
+        directory = directory.parent
+
+
+def replace_previous(item: LibraryItem) -> str:
+    """Nach erneutem Bearbeiten: die frühere Version in der neuen Library entfernen."""
+    prev, dst = item.previous, item.target
+    item.previous = None
+    if prev is None or dst is None or not prev.exists() or not dst.exists():
+        return ""
+    if prev.resolve() == dst.resolve():
+        return ""  # gleiche Datei wurde überschrieben
+    move_to_trash(prev)
+    remove_empty_dirs(prev.parent)
+    return "alte Version in den Papierkorb"
+
+
 @dataclass
 class ApplyOptions:
     move: bool = False  # False: Originale bleiben liegen, True: Originale werden entfernt
@@ -65,6 +105,9 @@ def apply_item(item: LibraryItem, opts: ApplyOptions, cover_loader: Callable[[Tr
     if opts.move and item.local.needs_conversion and src.exists():
         src.unlink()
         actions.append("Original gelöscht")
+    replaced = replace_previous(item)
+    if replaced:
+        actions.append(replaced)
     return ", ".join(actions) or "unverändert"
 
 

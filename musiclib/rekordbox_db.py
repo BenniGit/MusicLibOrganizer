@@ -8,6 +8,7 @@ von Rekordbox 6/7). Vor jeder Änderung werden master.db und die betroffenen Ana
 from __future__ import annotations
 
 import json
+import re
 import shutil
 from dataclasses import asdict, dataclass
 from datetime import datetime
@@ -43,6 +44,7 @@ class Step:
     old: str
     new: str
     action: str
+    key: str = ""  # Eintrag im Umzugs-Journal (ursprüngliche Datei)
 
 
 def rekordbox_running() -> bool:
@@ -75,6 +77,12 @@ def db_file(db) -> Path:
     return Path(db.engine.url.database)
 
 
+def _without_counter(path: str) -> str:
+    """„Titel (2).mp3“ → „Titel.mp3“: Doppelte aus früheren Versionen, die erneut Bearbeitetes nicht ersetzten."""
+    p = Path(path)
+    return str(p.with_name(re.sub(r" \(\d+\)$", "", p.stem) + p.suffix))
+
+
 def plan(db, journal: Journal) -> list[Step]:
     """Was würde das Umstellen tun? Ändert nichts."""
     by_path = {}
@@ -82,18 +90,23 @@ def plan(db, journal: Journal) -> list[Step]:
         by_path.setdefault(norm(c.FolderPath or ""), c)
     steps = []
     for m in journal.all():
-        old_c = by_path.get(m.src)
         new_c = by_path.get(m.dst)
+        # Rekordbox zeigt auf die Originaldatei oder – bei erneut bearbeiteten Tracks – auf ein früheres Ziel
+        old_c = next((by_path[p] for p in [*reversed(m.prev), m.src, _without_counter(m.dst)] if p in by_path), None)
         if new_c is not None:
-            steps.append(Step(str(new_c.ID), new_c.Title or "", int(new_c.Rating or 0), m.src, m.dst, ALREADY))
-        elif old_c is None:
-            steps.append(Step("", "", 0, m.src, m.dst, NOT_IN_RB))
-        elif not Path(m.dst).is_file():
-            steps.append(Step(str(old_c.ID), old_c.Title or "", int(old_c.Rating or 0), m.src, m.dst, TARGET_MISSING))
-        elif Path(m.src).suffix.lower() != Path(m.dst).suffix.lower():
-            steps.append(Step(str(old_c.ID), old_c.Title or "", int(old_c.Rating or 0), m.src, m.dst, TYPE_CHANGED))
+            steps.append(Step(str(new_c.ID), new_c.Title or "", int(new_c.Rating or 0), m.src, m.dst, ALREADY, m.src))
+            continue
+        if old_c is None:
+            steps.append(Step("", "", 0, m.src, m.dst, NOT_IN_RB, m.src))
+            continue
+        old = norm(old_c.FolderPath)
+        if not Path(m.dst).is_file():
+            action = TARGET_MISSING
+        elif Path(old).suffix.lower() != Path(m.dst).suffix.lower():
+            action = TYPE_CHANGED
         else:
-            steps.append(Step(str(old_c.ID), old_c.Title or "", int(old_c.Rating or 0), m.src, m.dst, SWITCH))
+            action = SWITCH
+        steps.append(Step(str(old_c.ID), old_c.Title or "", int(old_c.Rating or 0), old, m.dst, action, m.src))
     return steps
 
 
@@ -172,7 +185,7 @@ def apply(db, steps: list[Step], journal: Journal | None = None) -> int:
         _set_path(db, db.get_content(ID=s.content_id), s.new)
     db.commit()
     if journal:
-        journal.mark_switched([s.old for s in todo] + [s.old for s in steps if s.action == ALREADY])
+        journal.mark_switched([s.key or s.old for s in steps if s.action in (SWITCH, ALREADY)])
     return len(todo)
 
 
