@@ -85,3 +85,26 @@ def test_unmatched_uses_old_tags(tmp_path):
 def test_missing_year_leaves_no_dangling_separator(tmp_path):
     loc = LocalTrack(tmp_path / "x.mp3", artist="A", title="Song", album="EP")
     assert target_path(LibraryItem(loc), tmp_path, DEFAULT_TEMPLATE).parent.name == "EP"
+
+
+def test_paths_stay_within_rekordbox_limit(tmp_path):
+    from musiclib.models import TrackMeta
+    from musiclib.organizer import MAX_PATH_LEN
+
+    meta = TrackMeta(id=1, name="Extremely Long Track Title " * 6, mix="Some Very Long Remix Name " * 3,
+                     artists=["Artist Number One", "Artist Number Two", "Artist Number Three"] * 3,
+                     release="A Very Long Release Name " * 5, label="A Label With A Long Name",
+                     release_date="2021-01-01", track_number=4)
+    items = [LibraryItem(LocalTrack(tmp_path / f"{i}.mp3"), selected=meta) for i in range(3)]
+    assign_targets(items, tmp_path, DEFAULT_TEMPLATE)
+    for it in items:
+        assert len(str(it.target)) <= MAX_PATH_LEN
+        assert it.target.suffix == ".mp3"
+        assert it.target.name.startswith("04 - Artist Number One")
+    assert len({it.target for it in items}) == 3  # gleiche Namen bleiben unterscheidbar
+
+
+def test_short_paths_unchanged(tmp_path):
+    from musiclib.organizer import fit_path_length
+
+    assert fit_path_length(tmp_path, ["A", "B - C"]) == ["A", "B - C"]

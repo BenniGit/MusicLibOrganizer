@@ -34,8 +34,9 @@ class Resp:
 
 
 class FakeSession:
-    def __init__(self):
+    def __init__(self, territory_tracks=False):
         self.calls = []
+        self.territory_tracks = territory_tracks
 
     def post(self, url, **kw):
         self.calls.append(("POST", url))
@@ -50,11 +51,26 @@ class FakeSession:
         if url.endswith("/auth/o/authorize/"):
             assert kw["params"]["redirect_uri"].endswith("/auth/o/post-message/")
             return Resp(302, headers={"Location": "https://x/?code=abc"})
-        if url.endswith("/catalog/search/"):
+        if url.endswith("/catalog/search/") and (kw.get("params") or {}).get("type") == "tracks":
             assert kw["headers"]["Authorization"] == "Bearer tok"
             return Resp(data={"tracks": [API_TRACK]})
         if url.endswith("/catalog/tracks/"):
-            return Resp(data={"results": [API_TRACK]})
+            rid = (kw.get("params") or {}).get("release_id")
+            if rid is None:
+                return Resp(data={"results": [API_TRACK]})
+            # ungeordnet (absteigende IDs), auch für gesperrte Releases und mit aus dem Shop genommenen Tracks
+            ids = {"78": [], "79": [3, 2, 1], "80": [12, 11, 1, 10]}[rid]
+            return Resp(data={"results": [{"id": i, "artists": [{"name": f"Artist {i}"}]} for i in ids], "next": None})
+        if "/catalog/tracks/" in url and url.endswith("/1/") and self.territory_tracks:
+            return Resp(403, data={}, text='{"detail":"Territory Restricted."}')
+        if url.endswith("/catalog/releases/79/") or url.endswith("/catalog/releases/79/tracks/"):
+            return Resp(403, data={}, text='{"detail":"Territory Restricted."}')
+        if url.endswith("/catalog/search/") and (kw.get("params") or {}).get("type") == "releases":
+            return Resp(data={"releases": [{"id": 79, "artists": [], "track_count": 0, "catalog_number": "R79"}]})
+        if url.endswith("/catalog/releases/80/"):
+            return Resp(data={"artists": [{"name": "Daft Punk"}], "track_count": 3})
+        if url.endswith("/catalog/releases/80/tracks/"):
+            return Resp(data={"results": [{"id": 10}, {"id": 11}, {"id": 12}], "next": None})
         if url.endswith("/catalog/releases/77/"):
             # Das "tracks"-Feld ist bei Beatport umgekehrt sortiert und darf nicht verwendet werden
             return Resp(data={"artists": [{"name": "Daft Punk"}], "track_count": 3, "catalog_number": "CAT",
@@ -98,6 +114,32 @@ def test_enrich_track_number_and_album_artist(tmp_path):
     assert (e.album_artist, e.track_number, e.track_total, e.enriched) == ("Daft Punk", 2, 3, True)
     va = c.enrich(BeatportTrack.from_api(dict(API_TRACK, release=dict(API_TRACK["release"], id=78))))
     assert va.album_artist == "Various Artists" and va.track_number is None
+
+
+def test_enrich_release_restricted_in_users_country(tmp_path):
+    """Release im Land gesperrt: Nummer aus der nach ID sortierten Trackliste, als gesperrt markiert."""
+    c = BeatportClient("u", "p", client_id="cid", token_cache=tmp_path / "t.json", session=FakeSession())
+    e = c.enrich(BeatportTrack.from_api(dict(API_TRACK, release=dict(API_TRACK["release"], id=79, name="R"))))
+    assert (e.track_number, e.track_total, e.catalog_number, e.restricted) == (1, 3, "X", True)
+    assert e.album_artist == "Artist 1, Artist 2, Artist 3"  # in Tracklisten-Reihenfolge
+    assert "beatport.com/search" in e.search_url
+
+
+def test_enrich_track_missing_from_shop_tracklist(tmp_path):
+    c = BeatportClient("u", "p", client_id="cid", token_cache=tmp_path / "t.json", session=FakeSession())
+    e = c.enrich(BeatportTrack.from_api(dict(API_TRACK, release=dict(API_TRACK["release"], id=80))))
+    assert (e.track_number, e.track_total, e.restricted) == (1, 4, True)
+
+
+def test_track_url_of_restricted_track(tmp_path):
+    c = BeatportClient("u", "p", client_id="cid", token_cache=tmp_path / "t.json",
+                       session=FakeSession(territory_tracks=True))
+    assert c.track("1").name == "One More Time"
+
+
+def test_normal_release_is_not_restricted(tmp_path):
+    c = BeatportClient("u", "p", client_id="cid", token_cache=tmp_path / "t.json", session=FakeSession())
+    assert not c.enrich(BeatportTrack.from_api(dict(API_TRACK, release=dict(API_TRACK["release"], id=77)))).restricted
 
 
 @pytest.mark.live

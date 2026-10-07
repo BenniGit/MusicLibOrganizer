@@ -1,6 +1,7 @@
 """Schreibt Beatport-Metadaten als ID3v2.4-Tags in MP3-Dateien."""
 from __future__ import annotations
 
+import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -29,6 +30,7 @@ CAMELOT_TO_KEY = {
 class TagOptions:
     key_format: str = "camelot"  # "camelot" | "musical"
     mix_in_title: bool = True
+    hide_original_mix: bool = False  # „(Original Mix)“ nicht in den Titel schreiben
     embed_cover: bool = True
     clean: bool = True  # alle vorhandenen Tags entfernen, bevor neue geschrieben werden
 
@@ -39,9 +41,19 @@ def format_key(track: TrackMeta, key_format: str) -> str:
     return track.key_name or track.key_camelot
 
 
-def format_title(track: TrackMeta, mix_in_title: bool) -> str:
-    if mix_in_title and track.mix:
-        return f"{track.name} ({track.mix})"
+def shown_mix(mix: str, hide_original: bool = False) -> str:
+    """Mix-Name für Titel und Dateiname; „Original Mix“ fällt auf Wunsch weg (steht dann nur im MIX-Tag)."""
+    from .matcher import canonical_mix
+
+    if hide_original and mix and canonical_mix(mix) == "original":
+        return ""
+    return mix
+
+
+def format_title(track: TrackMeta, mix_in_title: bool, hide_original_mix: bool = False) -> str:
+    mix = shown_mix(track.mix, hide_original_mix)
+    if mix_in_title and mix:
+        return f"{track.name} ({mix})"
     return track.name
 
 
@@ -66,6 +78,15 @@ def kept_frames(src: Path, keys: set[str]) -> list[Frame]:
     return frames
 
 
+_INVISIBLE = dict.fromkeys(map(ord, "\ufeff\u200b\u200c\u200d\u2060\u00ad"), None)
+
+
+def clean_text(value: str) -> str:
+    """Einheitliche Unicode-Schreibweise (NFC) ohne unsichtbare Zeichen – sonst sind
+    „Kröcher“ und „Kröcher“ für Rekordbox und Finder zwei verschiedene Namen."""
+    return unicodedata.normalize("NFC", value).translate(_INVISIBLE).strip()
+
+
 def write_tags(path: Path, track: TrackMeta, opts: TagOptions, cover: bytes | None = None,
                keep: list[Frame] | None = None, comment_tags: list[str] | None = None) -> None:
     """Schreibt die Metadaten. ``comment_tags`` (ohne '#') landen als '#tag #tag' im Kommentar;
@@ -87,11 +108,12 @@ def write_tags(path: Path, track: TrackMeta, opts: TagOptions, cover: bytes | No
 
     def put(frame_cls, value, **kw):
         tags.delall(frame_cls.__name__ if not kw.get("desc") else f"{frame_cls.__name__}:{kw['desc']}")
+        value = clean_text(value) if isinstance(value, str) else value
         if value not in (None, ""):
             tags.add(frame_cls(encoding=3, text=[str(value)], **kw))
 
     put(TPE1, track.artist)
-    put(TIT2, format_title(track, opts.mix_in_title))
+    put(TIT2, format_title(track, opts.mix_in_title, opts.hide_original_mix))
     put(TPE2, track.effective_album_artist)
     put(TALB, track.release)
     if track.track_number:
@@ -127,6 +149,7 @@ def write_tags(path: Path, track: TrackMeta, opts: TagOptions, cover: bytes | No
 
     if opts.embed_cover and cover:
         tags.delall("APIC")
-        tags.add(APIC(encoding=3, mime="image/jpeg", type=3, desc="Cover", data=cover))
+        mime = "image/png" if cover.startswith(b"\x89PNG") else "image/jpeg"
+        tags.add(APIC(encoding=3, mime=mime, type=3, desc="Cover", data=cover))
 
     tags.save(path, v2_version=4, v1=0)

@@ -12,7 +12,7 @@ from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QApplication, QButtonGroup, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout,
     QGridLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPlainTextEdit, QPushButton, QRadioButton,
-    QSpinBox,
+    QSpinBox, QScrollArea, QFrame,
     QTableWidget, QTableWidgetItem, QAbstractItemView, QHeaderView, QTabWidget, QVBoxLayout, QWidget,
 )
 
@@ -102,6 +102,11 @@ class SettingsDialog(QDialog):
         self.mix_check = QCheckBox("Mix-Name im Titel, z. B. „Song (Extended Mix)“")
         self.mix_check.setChecked(s.mix_in_title)
         form.addRow("", self.mix_check)
+        self.hide_original_check = QCheckBox("„Original Mix“ weglassen (nur andere Versionen wie Extended Mix, Remix, Dub stehen im Titel)")
+        self.hide_original_check.setToolTip("Der Mix-Name bleibt im Tag MIX erhalten.")
+        self.hide_original_check.setChecked(s.hide_original_mix)
+        self.hide_original_check.toggled.connect(lambda _on: self._update_preview())
+        form.addRow("", self.hide_original_check)
         self.cover_check = QCheckBox("Cover einbetten")
         self.cover_check.setChecked(s.embed_cover)
         form.addRow("", self.cover_check)
@@ -259,7 +264,9 @@ class SettingsDialog(QDialog):
         lines = []
         for meta in examples:
             item = LibraryItem(LocalTrack(Path("x.mp3")), selected=meta)
-            lines.append(str(target_path(item, Path("Bibliothek"), tpl, "camelot", fallback)))
+            hide = getattr(self, "hide_original_check", None)
+            lines.append(str(target_path(item, Path("Bibliothek"), tpl, "camelot", fallback,
+                                         hide.isChecked() if hide else self._settings.hide_original_mix)))
         self.preview.setText("<br>".join(f"<code>{line}</code>" for line in lines))
 
     def _accept(self) -> None:
@@ -276,6 +283,7 @@ class SettingsDialog(QDialog):
             move=self.move_radio.isChecked(),
             key_format=self.key_combo.currentData(),
             mix_in_title=self.mix_check.isChecked(),
+            hide_original_mix=self.hide_original_check.isChecked(),
             embed_cover=self.cover_check.isChecked(),
             clean_tags=self.clean_check.isChecked(),
             required_fields=[k for k, cb in self.required_checks.items() if cb.isChecked()],
@@ -522,11 +530,19 @@ class MetadataDialog(QDialog):
                  keep: set[str] | None = None, tags: list[str] | None = None):
         super().__init__(parent)
         self.setWindowTitle("Metadaten bearbeiten")
-        self.resize(820, 0)
+        self.setSizeGripEnabled(True)
         self.meta = meta
         self.settings = settings
         self.old = dict(local.old) if local else {}
-        lay = QVBoxLayout(self)
+        # Inhalt in einem Scrollbereich – Pflichtfeld-Hinweis und Buttons bleiben immer sichtbar
+        outer = QVBoxLayout(self)
+        content = QWidget()
+        lay = QVBoxLayout(content)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setWidget(content)
+        outer.addWidget(scroll, 1)
 
         src = meta.source + (" (bearbeitet)" if meta.edited else "")
         head = QLabel(f'Quelle: <a href="{meta.url}">{src}</a>' if meta.url else f"Quelle: {src}")
@@ -668,15 +684,26 @@ class MetadataDialog(QDialog):
                 self.extra_checks[k] = cb
                 bl.addWidget(cb)
             lay.addWidget(box)
+        lay.addStretch()
 
         self.missing = QLabel()
         self.missing.setWordWrap(True)
-        lay.addWidget(self.missing)
+        outer.addWidget(self.missing)
         bb = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
         bb.accepted.connect(self.accept)
         bb.rejected.connect(self.reject)
-        lay.addWidget(bb)
+        outer.addWidget(bb)
         self._update_missing()
+        self._fit_to_screen(content)
+
+    def _fit_to_screen(self, content: QWidget) -> None:
+        """Startgröße: so groß wie der Inhalt, höchstens 85 % des Bildschirms; kleiner ziehen geht immer."""
+        screen = (self.screen() or QApplication.primaryScreen()).availableGeometry()
+        hint = content.sizeHint()
+        w = min(max(hint.width() + 40, 700), int(screen.width() * 0.9))
+        h = min(hint.height() + 110, int(screen.height() * 0.85))
+        self.resize(w, h)
+        self.setMinimumSize(420, 300)
 
     @staticmethod
     def _is_mapped(key: str) -> bool:

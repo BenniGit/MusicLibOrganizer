@@ -6,7 +6,7 @@ from dataclasses import asdict, dataclass, field, fields, replace
 
 from . import hashtags
 from .hashtags import DEFAULT_TAG_GROUPS
-from .models import LibraryItem, TrackMeta
+from .models import LibraryItem, TrackMeta, no_label
 
 # Name -> Vorlage. "/" erzeugt Unterordner.
 TEMPLATE_PRESETS: dict[str, str] = {
@@ -48,6 +48,7 @@ class AppSettings:
     template: str = DEFAULT_TEMPLATE
     key_format: str = "camelot"  # "camelot" | "musical"
     mix_in_title: bool = True
+    hide_original_mix: bool = True  # „(Original Mix)“ weglassen – steht dann nur im MIX-Tag
     embed_cover: bool = True
     move: bool = False
     clean_tags: bool = True
@@ -81,7 +82,7 @@ class AppSettings:
 
 def effective_meta(meta: TrackMeta, settings: AppSettings) -> TrackMeta:
     """Wendet Ersatzwerte an (z. B. 'Self-Released', wenn kein Label bekannt ist)."""
-    if not meta.label.strip() and settings.label_fallback.strip():
+    if no_label(meta.label) and settings.label_fallback.strip():
         return replace(meta, label=settings.label_fallback.strip())
     return meta
 

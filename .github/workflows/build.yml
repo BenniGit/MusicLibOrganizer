@@ -32,6 +32,8 @@ jobs:
           python-version: "3.12"
       - name: Abhängigkeiten
         run: pip install . pyinstaller
+      - name: App-Icon (.icns) erzeugen
+        run: ./packaging/make_icns.sh
       - name: App bauen
         run: pyinstaller --noconfirm packaging/MusicLibOrganizer.spec
       - name: Kurztest (App starten und beenden)
@@ -40,8 +42,15 @@ jobs:
         run: |
           VERSION=$(python -c "import musiclib; print(musiclib.__version__)")
           mkdir -p dmg && cp -R dist/MusicLibOrganizer.app dmg/ && ln -s /Applications dmg/Programme
-          hdiutil create -volname "MusicLibOrganizer $VERSION" -srcfolder dmg -ov -format UDZO \
-            "MusicLibOrganizer-$VERSION-macOS-AppleSilicon.dmg"
+          # Volume-Icon: dasselbe Icon für das eingehängte DMG im Finder
+          cp packaging/build/icon.icns dmg/.VolumeIcon.icns
+          hdiutil create -volname "MusicLibOrganizer $VERSION" -srcfolder dmg -ov -format UDRW rw.dmg
+          mkdir -p dmg-mnt
+          hdiutil attach rw.dmg -readwrite -noverify -noautoopen -nobrowse -mountpoint "$PWD/dmg-mnt"
+          xcrun SetFile -a V dmg-mnt/.VolumeIcon.icns
+          xcrun SetFile -a C dmg-mnt
+          hdiutil detach "$PWD/dmg-mnt"
+          hdiutil convert rw.dmg -format UDZO -ov -o "MusicLibOrganizer-$VERSION-macOS-AppleSilicon.dmg"
           echo "DMG=MusicLibOrganizer-$VERSION-macOS-AppleSilicon.dmg" >> "$GITHUB_ENV"
       - uses: actions/upload-artifact@v4
         with:

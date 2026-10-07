@@ -131,6 +131,8 @@ def read_track(path: Path) -> LocalTrack:
         comments = [v for k, _label, v in track.raw_tags
                     if k.split(":", 1)[0] == "COMM" or k.lower() in ("comment", "description")]
         track.hashtags = hashtags.parse(" ".join(comments))
+        track.has_cover = bool(getattr(audio, "pictures", None)) or (
+            isinstance(tags, ID3) and bool(tags.getall("APIC")))
         track.artist = track.old.get("artist", "")
         track.title = track.old.get("title", "")
         track.album = track.old.get("album", "")

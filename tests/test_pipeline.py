@@ -102,3 +102,38 @@ def test_flac_tags_can_be_kept(tmp_path, bp_track):
     tags = ID3(tmp_path / "out" / "One More Time.mp3")
     assert str(tags["TXXX:COMPOSER"]) == "Someone"
     assert "TPE1" in tags and str(tags["TPE1"]) == "Daft Punk"
+
+
+def test_reprocess_replaces_previous_version(tmp_path, bp_track, monkeypatch):
+    import musiclib.pipeline as pipeline
+
+    monkeypatch.setattr(pipeline, "move_to_trash", lambda p: p.unlink())
+    src = tmp_path / "in" / "x.mp3"
+    src.parent.mkdir()
+    src.write_bytes(b"audio")
+    out = tmp_path / "out"
+    opts = ApplyOptions(move=False, tag=TagOptions(), backup_dir=tmp_path / "bak")
+
+    # Erste Übernahme
+    item = LibraryItem(read_track(src))
+    assign_targets([item], out, "{artist}/{title}")
+    first = item.target
+    apply_item(item, opts)
+    assert first.exists()
+
+    # Erneut bearbeiten, gleiches Ziel: wird überschrieben statt "(2)"
+    item.previous = first
+    assign_targets([item], out, "{artist}/{title}")
+    assert item.target == first
+    apply_item(item, opts)
+    assert sorted(p.name for p in out.rglob("*.mp3")) == [first.name]
+
+    # Erneut bearbeiten mit neuem Ziel: alte Version und leerer Ordner verschwinden
+    item.previous = first
+    item.selected = bp_track
+    monkeypatch.setattr(pipeline, "write_tags", lambda *a, **k: None)
+    assign_targets([item], out, "{artist}/{title}")
+    assert item.target != first
+    assert "alte Version" in apply_item(item, opts)
+    assert not first.exists() and not first.parent.exists()
+    assert [p for p in out.rglob("*.mp3")] == [item.target]

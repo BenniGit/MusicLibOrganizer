@@ -7,9 +7,50 @@ from pathlib import Path
 from typing import Callable
 
 from .converter import to_mp3
-from .models import LibraryItem, TrackMeta
+from .covers import existing_cover
+from .models import LibraryItem, TrackMeta, no_label
 from .backup import backup_tags
 from .tagger import TagOptions, kept_frames, write_tags
+
+
+def move_to_trash(path: Path) -> None:
+    """In den Papierkorb (wiederherstellbar); ohne Papierkorb wird gelöscht."""
+    try:
+        from PySide6.QtCore import QFile
+
+        if QFile.moveToTrash(str(path)):
+            return
+    except Exception:
+        pass
+    path.unlink()
+
+
+def remove_empty_dirs(directory: Path, levels: int = 2) -> None:
+    """Leer gewordene Release-/Artist-Ordner entfernen (.DS_Store zählt nicht als Inhalt)."""
+    for _ in range(levels):
+        try:
+            entries = list(directory.iterdir())
+        except OSError:
+            return
+        if any(e.name != ".DS_Store" for e in entries):
+            return
+        for e in entries:
+            e.unlink()
+        directory.rmdir()
+        directory = directory.parent
+
+
+def replace_previous(item: LibraryItem) -> str:
+    """Nach erneutem Bearbeiten: die frühere Version in der neuen Library entfernen."""
+    prev, dst = item.previous, item.target
+    item.previous = None
+    if prev is None or dst is None or not prev.exists() or not dst.exists():
+        return ""
+    if prev.resolve() == dst.resolve():
+        return ""  # gleiche Datei wurde überschrieben
+    move_to_trash(prev)
+    remove_empty_dirs(prev.parent)
+    return "alte Version in den Papierkorb"
 
 
 @dataclass
@@ -35,6 +76,8 @@ def apply_item(item: LibraryItem, opts: ApplyOptions, cover_loader: Callable[[Tr
     actions = []
     # Vor dem Verschieben/Überschreiben: zu behaltende Tags lesen und alte Tags sichern
     keep = kept_frames(src, item.keep_tags) if item.selected else []
+    # Fallback, falls weder ein eigenes Cover noch eins von der Quelle kommt: das bisherige behalten
+    old_cover = existing_cover(src) if item.selected and opts.tag.embed_cover and item.cover is None else None
     if item.selected and opts.tag.clean:
         backup_tags(item.local, dst, opts.backup_dir)
 
@@ -51,20 +94,25 @@ def apply_item(item: LibraryItem, opts: ApplyOptions, cover_loader: Callable[[Tr
 
     if item.selected:
         meta = item.selected
-        if not meta.label.strip() and opts.label_fallback.strip():
+        if no_label(meta.label) and opts.label_fallback.strip():
             meta = replace(meta, label=opts.label_fallback.strip())
-        cover = None
-        if opts.tag.embed_cover and cover_loader and meta.image_url:
+        cover = item.cover
+        if cover is None and opts.tag.embed_cover and cover_loader and meta.image_url:
             try:
                 cover = cover_loader(meta)
             except Exception:
                 cover = None
-        write_tags(dst, meta, opts.tag, cover, keep, tags)
+        cover = cover or old_cover
+        tag_opts = replace(opts.tag, embed_cover=True) if item.cover else opts.tag  # eigenes Cover immer einbetten
+        write_tags(dst, meta, tag_opts, cover, keep, tags)
         actions.append("getaggt")
 
     if opts.move and item.local.needs_conversion and src.exists():
         src.unlink()
         actions.append("Original gelöscht")
+    replaced = replace_previous(item)
+    if replaced:
+        actions.append(replaced)
     return ", ".join(actions) or "unverändert"
 
 

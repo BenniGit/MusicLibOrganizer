@@ -38,13 +38,42 @@ Standardmäßig werden **alle vorhandenen Tags entfernt** (ID3v1, ID3v2, APE) un
 Im Metadaten-Editor steht neben jedem Feld der **bisherige Wert aus der Datei** – ein Klick übernimmt ihn. Alle übrigen vorhandenen Tags (Kommentar, Komponist, Rating …) werden darunter aufgelistet und können pro Track **zum Behalten angehakt** werden.
 Hinweis: Auch Cue-Punkte von Serato/Traktor, die in Tags gespeichert sind, werden entfernt, wenn du sie nicht anhakst. Rekordbox speichert Cues in seiner eigenen Datenbank und ist davon nicht betroffen.
 
+## Umzug in eine neue Library – Rekordbox bleibt erhalten
+
+Die App kann die Sammlung **nach und nach** in eine neue Library kopieren (z. B. von `Music/Library` nach
+`Music/LibOrganized`), während Rekordbox weiter mit den alten Dateien arbeitet. Danach werden in Rekordbox nur die
+**Dateipfade** umgestellt – Sterne, Farben, Cues, Beatgrids, Playlists, History und Import-Datum bleiben erhalten,
+es gibt keinen Neuimport.
+
+1. **Übernehmen:** Quelle = alte Library, Ziel = neue Library, Modus „Kopieren“. Jede übernommene Datei wird im
+   Umzugs-Journal vermerkt (alter ↔ neuer Pfad). Beim nächsten Scan erscheinen schon übernommene Dateien als „erledigt“.
+2. **Umstellen:** Rekordbox beenden, dann Menü **Rekordbox → Rekordbox auf neue Library umstellen…** (oder
+   `musiclib-rekordbox umstellen --anwenden`). Vorher werden `master.db` und die Analyse-Dateien der betroffenen Tracks
+   gesichert, danach wird geprüft, dass jeder umgestellte Track seine Datei findet. Das geht beliebig oft – jedes Mal
+   werden die seitdem übernommenen Dateien umgestellt.
+3. **Zurück:** Menü **Rekordbox → Letzte Sicherung zurückspielen…** (oder `musiclib-rekordbox zurueck`).
+
+Hinweise: Tracks, deren Format sich ändert (FLAC → MP3), werden nicht automatisch umgestellt, sondern im Status
+aufgeführt. Titel/Artist usw. zeigt Rekordbox aus der eigenen Datenbank – nach dem Umstellen in Rekordbox die Tracks
+markieren und „Tag-Informationen neu laden“, um die neuen Tags zu übernehmen. Der Zugriff auf die `master.db` nutzt
+[pyrekordbox](https://github.com/dylanljones/pyrekordbox) und ist von Pioneer nicht offiziell unterstützt.
+
+```bash
+musiclib-rekordbox status                  # was würde umgestellt (ändert nichts)
+musiclib-rekordbox umstellen --anwenden    # sichern, umstellen, prüfen
+musiclib-rekordbox zurueck                 # letzte Sicherung zurückspielen
+```
+
 ## Treffer prüfen und korrigieren
 
 - **Doppelklick** auf eine Zeile: alle Treffer aller Quellen ansehen, manuell suchen (auch gezielt nur in einer Quelle), im Browser öffnen, übernehmen.
 - **Per URL übernehmen**, wenn die Suche nichts findet: im Doppelklick-Fenster eine URL ins Suchfeld einfügen (statt eines Suchbegriffs) oder **Rechtsklick → Von URL übernehmen…**. Unterstützt werden Beatport (Track/Release), Discogs (Release/Master), Bandcamp (Track/Album, auch mit eigener Domain) und SoundCloud (Track/Set).
   Mehrere Dateien markieren und eine **Release-URL** angeben: jede Datei wird dem passenden Track des Releases zugeordnet – über Titel/Artist oder, bei Namen wie `01 track.wav`, über die Tracknummer.
-- **Inoffizielle Tracks** (Bootlegs, Edits, Free Downloads): **Rechtsklick → Als inoffiziell erfassen** – auch für viele Tracks auf einmal. Der Track wird als eigene Single behandelt: Album = Titel inkl. Mix, Tracknummer 1/1, Album-Artist = Artist, Label = „Bootleg“ (einstellbar), Jahr = Dateidatum. Mit einer SoundCloud-URL kommen Titel, Artist, Genre, Upload-Datum und Cover direkt von SoundCloud. Beispiel:
+- **Inoffizielle Tracks** (Bootlegs, Edits, Free Downloads): **Rechtsklick → Als inoffiziell erfassen** – auch für viele Tracks auf einmal. Hat der Track einen Treffer auf das Original (z. B. Beatport), kommen davon nur Artist, Titel, Genre, BPM und Key; Release, Label, ISRC und Tracknummer des Originals werden nicht übernommen, der Bootlegger aus dem Mix („Someone Bootleg“) wird Remixer. Der Track wird als eigene Single behandelt: Album = Titel inkl. Mix, Tracknummer 1/1, Album-Artist = Artist, Label = „Bootleg“ (einstellbar), Jahr = Dateidatum. Mit einer SoundCloud-URL kommen Titel, Artist, Genre, Upload-Datum und Cover direkt von SoundCloud. Beispiel:
   `Fisher/2023 - Losing It (Someone Bootleg) [Bootleg]/01 - Fisher - Losing It (Someone Bootleg).mp3`
+- **Ein Release pro EP/Album:** Nach dem Abgleich prüft die App, ob Tracks derselben EP aus verschiedenen Releases oder Quellen kommen (erkannt am alten Album-Tag im selben Ordner oder am gleichen Release-Namen). Gewählt wird ein Release – bereits übernommene, dann manuell gewählte, dann Beatport, dann das mit den meisten Tracks – und die übrigen Tracks werden auf dessen Trackliste umgestellt. Geht das nicht, wird der Track „unsicher“ mit Hinweis „anderes Release als der Rest der EP“ und nicht automatisch übernommen. Wählst du für einen Track manuell ein Release, folgen die anderen Tracks der EP automatisch. Von Hand erneut prüfen: **Menü Auswahl → EPs/Alben auf ein Release angleichen**.
+- **Rechtsklick → Release / Cover bearbeiten…**: mehrere Tracks markieren und die gemeinsamen Felder eines Releases auf einmal setzen (Release, Album-Artist, Label, Katalognummer, Datum, Genre, Sub-Genre, Trackanzahl, Disc). Felder, in denen sich die Tracks unterscheiden, zeigen „verschieden“ und bleiben unverändert, solange du nichts einträgst. Optional werden die Tracknummern 1 … n neu vergeben.
+- **Cover:** Die Spalte **Cover** zeigt, woher das Cover kommt (Quelle, eigenes, bisheriges der Datei) – „–“ heißt: kein Cover. Ein eigenes Cover setzt du im selben Dialog: Bild wählen, Bild-URL eingeben oder ein Bild aus dem Finder bzw. Browser auf die Vorschau ziehen. Große Bilder werden auf 1400 px verkleinert. Reihenfolge beim Schreiben: eigenes Cover → Cover der Quelle → bisheriges Cover der Datei.
 - **Rechtsklick → Metadaten bearbeiten…**: kleine Korrekturen (Genre, Label, Mix, Datum, Key …) vor dem Schreiben. Bei Tracks ohne Treffer lassen sich die Daten auch komplett manuell erfassen.
 - Die Spalte **Fehlt** zeigt fehlende Pflichtfelder; über **Anzeigen** lässt sich die Liste filtern (z. B. „Unvollständig“, „Unsicher“, „Bereit zur Übernahme“).
 
@@ -63,9 +92,26 @@ Hinweis: Auch Cue-Punkte von Serato/Traktor, die in Tags gespeichert sind, werde
   | Import-Monat / Genre | `2026-10/Techno/Charlotte de Witte - Doppler (Original Mix).mp3` |
   | Flach | `Charlotte de Witte - Doppler (Original Mix).mp3` |
 
+  Zielpfade werden bei Bedarf automatisch gekürzt (erst der Dateiname, dann die längsten Ordnernamen), damit der vollständige Pfad höchstens **255 Zeichen** lang ist – längere Pfade importiert Rekordbox nicht.
   Eigene Muster sind möglich mit `{artist}` `{albumartist}` `{title}` `{mix}` `{track}` `{disc}` `{album}` `{genre}` `{label}` `{catno}` `{year}` `{bpm}` `{key}` `{added}`; `/` erzeugt Unterordner, leere Ordnerebenen und überflüssige Trennzeichen werden entfernt. Außerdem: Kopieren oder Verschieben.
 - **Tags & Pflichtfelder** – Key-Format (Camelot/Tonart), Mix-Name im Titel, Cover, vorhandene Tags ersetzen (an/aus), welche Felder Pflicht sind (Standard: Artist, Titel, Album-Artist, Tracknummer, Album, Genre, Label, Jahr) und ein **Ersatz-Label** (Standard „Self-Released“) für Tracks ohne Label.
 - **Quellen** – Beatport-Zugang, Discogs-Token, Bandcamp an/aus, Schwellen für „gefunden“ und „100 %-Übernahme“.
+
+## Library-Ordner umbenennen
+
+Wenn der Umzug abgeschlossen ist und der alte Ordner weg ist: **🎧 Rekordbox-Umzug → Library-Ordner umbenennen…** (oder `musiclib-rekordbox umbenennen ~/Nextcloud/Music/LibOrganized ~/Nextcloud/Music/Library`). Der Ordner wird umbenannt, alle Pfade landen im Umzugs-Journal und Rekordbox wird mit Sicherung umgestellt. Nicht im Finder umbenennen – dann findet Rekordbox keinen Track mehr.
+
+## Library prüfen
+
+**Menü Datei → Library prüfen…** (oder im Terminal `musiclib-pruefen ~/Nextcloud/Music/LibOrganized --rekordbox`) liest die sortierte Library und Rekordbox nur und listet, was auffällt: fehlende Angaben und Cover, MP3s unter 320 kbit/s, Schreibvarianten (z. B. „Fisher“/„FISHER“, „Tech House“/„Tech-House“ – teilen Ordner auf), mögliche Duplikate, uneinheitliche Release-Ordner, doppelte Tracknummern, zu lange Pfade, leere Ordner, Rekordbox-Einträge ohne Datei und Dateien, die nicht in Rekordbox sind. Der Bericht wird unter `~/Library/Application Support/MusicLibOrganizer/berichte/` gespeichert.
+
+## Schreibweisen vereinheitlichen
+
+**Menü Datei → Schreibweisen vereinheitlichen…** findet Namen, die in der Ziel-Library unterschiedlich geschrieben sind („Omar-S“/„Omar S“, „K7 Records“/„!K7 Records“, „Tech House“/„Tech-House“, unsichtbare Zeichen oder zerlegte Umlaute) sowie den Discogs-Platzhalter „Not On Label“ (→ „Self-Released“). Pro Zeile wählst du die richtige Schreibweise; nach einer Vorschau werden die Tags neu geschrieben, Ordner und Dateinamen angepasst und alle Umbenennungen ins Umzugs-Journal eingetragen. Anschließend stellt die App auf Wunsch Rekordbox um (Sterne, Cues, Playlists bleiben). Alle alten Werte stehen im Protokoll unter `~/Library/Application Support/MusicLibOrganizer/vereinheitlichen/`.
+
+Außerdem bietet der Dialog an, **„(Original Mix)“ aus Titel und Dateiname zu entfernen** – der Mix-Name bleibt im Tag `MIX` erhalten. Für neue Tracks steuert das die Einstellung „„Original Mix“ weglassen“ (⚙ → Tags, standardmäßig an); andere Versionen wie Extended Mix, Remix oder Dub stehen weiter im Titel.
+
+Damit Rekordbox auch die neuen Namen anzeigt: die betroffenen Tracks markieren → Rechtsklick → „Tag-Informationen neu laden“.
 
 ## Test-Werkzeug: Energie schätzen (experimentell)
 
@@ -107,6 +153,11 @@ Die fertige App für Macs mit Apple Silicon (M1–M4) gibt es unter
 
 Eine neue Version entsteht automatisch, sobald ein Versions-Tag (z. B. `v0.7.0`) gepusht wird.
 Das Test-Werkzeug `musiclib-energie` ist nicht in der App enthalten – dafür weiterhin die Installation unten.
+
+Die Oberfläche ist im Stil von iTunes 5 gehalten (glasiges Aqua-Blau, LCD-Anzeige oben, gestreifte Titelliste;
+`musiclib/theme.py`). Das App-Icon liegt als Vorlage in `packaging/icon.svg`; nach Änderungen
+`python packaging/make_icon.py` (braucht `cairosvg`) ausführen – das erzeugt `musiclib/resources/icon.png`,
+aus dem der Mac-Build mit `packaging/make_icns.sh` das `.icns` für App und DMG baut.
 
 ## Installation (für Entwicklung und das Test-Werkzeug)
 
