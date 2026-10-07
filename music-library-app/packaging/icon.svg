@@ -1,107 +1,90 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Mac OS X Aqua (2000er): blauer Gel-Ordner, silberne CDs werden einsortiert -->
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#F7E9CC"/>
-      <stop offset="1" stop-color="#EBCF9C"/>
+    <linearGradient id="folderBack" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#7DB6EE"/>
+      <stop offset="1" stop-color="#2D6FC4"/>
     </linearGradient>
-    <linearGradient id="wood" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#9A6440"/>
-      <stop offset="1" stop-color="#6E4228"/>
+    <linearGradient id="folderFront" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#9CCBF7"/>
+      <stop offset="0.45" stop-color="#4E95E3"/>
+      <stop offset="1" stop-color="#1D5BB5"/>
     </linearGradient>
-    <clipPath id="squircle"><rect x="100" y="100" width="824" height="824" rx="185"/></clipPath>
-    <clipPath id="suncircle"><circle cx="512" cy="500" r="300"/></clipPath>
-    <clipPath id="sunclip">
-      <!-- Sonne mit 70er-Streifenlücken unten -->
-      <rect x="0" y="0" width="1024" height="420"/>
-      <rect x="0" y="436" width="1024" height="34"/>
-      <rect x="0" y="484" width="1024" height="26"/>
-      <rect x="0" y="522" width="1024" height="20"/>
-      <rect x="0" y="552" width="1024" height="14"/>
-    </clipPath>
-    <radialGradient id="vinyl" cx="0.5" cy="0.5" r="0.5">
-      <stop offset="0" stop-color="#3A3330"/>
-      <stop offset="1" stop-color="#1E1A18"/>
+    <linearGradient id="gloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.85"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0.05"/>
+    </linearGradient>
+    <radialGradient id="cd" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0.12" stop-color="#FFFFFF"/>
+      <stop offset="0.35" stop-color="#D7DDE4"/>
+      <stop offset="0.55" stop-color="#F4F6F8"/>
+      <stop offset="0.75" stop-color="#B8C2CD"/>
+      <stop offset="1" stop-color="#E9EDF1"/>
     </radialGradient>
-    <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%">
-      <feDropShadow dx="0" dy="14" stdDeviation="14" flood-color="#3B2414" flood-opacity="0.35"/>
+    <linearGradient id="rainbow" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#8FD3FF" stop-opacity="0.55"/>
+      <stop offset="0.35" stop-color="#C9A6FF" stop-opacity="0.35"/>
+      <stop offset="0.65" stop-color="#9BF0C8" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#FFB3D9" stop-opacity="0.45"/>
+    </linearGradient>
+    <linearGradient id="note" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.95"/>
+      <stop offset="1" stop-color="#D6E9FB" stop-opacity="0.9"/>
+    </linearGradient>
+    <linearGradient id="reflect" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2D6FC4" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#2D6FC4" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#0B2A55" flood-opacity="0.45"/>
     </filter>
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#0B2A55" flood-opacity="0.35"/>
+    </filter>
+    <symbol id="disc" viewBox="-200 -200 400 400">
+      <circle r="196" fill="url(#cd)" stroke="#8C99A8" stroke-width="4"/>
+      <circle r="196" fill="url(#rainbow)"/>
+      <circle r="150" fill="none" stroke="#FFFFFF" stroke-opacity="0.6" stroke-width="3"/>
+      <circle r="62" fill="#E3E8EE" stroke="#9AA6B3" stroke-width="3"/>
+      <circle r="26" fill="#FFFFFF" stroke="#9AA6B3" stroke-width="3"/>
+      <path d="M -150 -90 A 175 175 0 0 1 -40 -168" stroke="#FFFFFF" stroke-width="14" stroke-linecap="round" fill="none" opacity="0.9"/>
+    </symbol>
   </defs>
 
-  <!-- Grundfläche -->
+  <!-- Spiegelung auf der "Glastischplatte" -->
+  <path d="M 150 860 L 874 860 L 850 960 L 174 960 Z" fill="url(#reflect)"/>
+
   <g filter="url(#shadow)">
-    <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#bg)"/>
+    <!-- Rückwand mit Reiter -->
+    <path d="M 150 300 Q 150 270 180 270 L 400 270 Q 420 270 432 252 L 452 222 Q 464 204 486 204
+             L 600 204 Q 630 204 630 234 L 630 270 L 844 270 Q 874 270 874 300 L 874 820 L 150 820 Z"
+          fill="url(#folderBack)" stroke="#1C4F96" stroke-width="6"/>
   </g>
 
-  <g clip-path="url(#squircle)">
-    <!-- Retro-Sonne -->
-    <g clip-path="url(#sunclip)"><g clip-path="url(#suncircle)">
-      <rect x="200" y="190" width="624" height="120" fill="#E9B63B"/>
-      <rect x="200" y="310" width="624" height="80" fill="#EE9A35"/>
-      <rect x="200" y="390" width="624" height="80" fill="#E8772E"/>
-      <rect x="200" y="470" width="624" height="340" fill="#CF4B2E"/>
-    </g></g>
-
-    <!-- Boden-Streifen -->
-    <rect x="100" y="790" width="824" height="140" fill="#5B3A29"/>
-    <rect x="100" y="770" width="824" height="14" fill="#CF4B2E"/>
-    <rect x="100" y="748" width="824" height="12" fill="#E8772E"/>
-    <rect x="100" y="728" width="824" height="10" fill="#E9B63B"/>
+  <!-- CDs, die einsortiert werden (hinten nach vorne) -->
+  <g filter="url(#soft)">
+    <use href="#disc" x="200" y="150" width="300" height="300"/>
+    <use href="#disc" x="500" y="96" width="320" height="320"/>
+    <use href="#disc" x="350" y="40" width="330" height="330"/>
   </g>
 
-  <!-- Schallplatten in der Kiste (hinten nach vorne) -->
-  <g>
-    <circle cx="380" cy="600" r="165" fill="url(#vinyl)"/>
-    <circle cx="380" cy="600" r="150" fill="none" stroke="#4A423E" stroke-width="3"/>
-    <circle cx="380" cy="600" r="125" fill="none" stroke="#4A423E" stroke-width="3"/>
-    <circle cx="380" cy="600" r="55" fill="#2F7F7A"/>
-    <circle cx="380" cy="600" r="8" fill="#1E1A18"/>
+  <!-- Vorderseite des Ordners -->
+  <g filter="url(#shadow)">
+    <path d="M 130 420 Q 130 390 160 390 L 864 390 Q 894 390 892 420 L 868 830 Q 866 860 836 860 L 188 860 Q 158 860 156 830 Z"
+          fill="url(#folderFront)" stroke="#1C4F96" stroke-width="6"/>
+  </g>
+  <!-- Aqua-Glanz -->
+  <path d="M 150 420 Q 150 404 170 404 L 854 404 Q 874 404 872 422 L 866 560 Q 512 610 158 560 Z" fill="url(#gloss)"/>
 
-    <circle cx="650" cy="610" r="160" fill="url(#vinyl)"/>
-    <circle cx="650" cy="610" r="145" fill="none" stroke="#4A423E" stroke-width="3"/>
-    <circle cx="650" cy="610" r="118" fill="none" stroke="#4A423E" stroke-width="3"/>
-    <circle cx="650" cy="610" r="54" fill="#E9B63B"/>
-    <circle cx="650" cy="610" r="8" fill="#1E1A18"/>
+  <!-- Eingeprägte Musiknote -->
+  <g transform="translate(512 680)" fill="url(#note)" stroke="#1C4F96" stroke-width="5" stroke-opacity="0.35">
+    <path d="M -40 -110 L 100 -140 L 100 40 A 46 36 -15 1 1 74 8 L 74 -96 L -14 -78 L -14 70
+             A 46 36 -15 1 1 -40 38 Z"/>
   </g>
 
-  <!-- Register-Reiter A / M / Z -->
-  <g font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-weight="bold" font-size="64" text-anchor="middle">
-    <rect x="232" y="560" width="96" height="120" rx="18" fill="#CF4B2E" stroke="#5B3A29" stroke-width="6"/>
-    <text x="280" y="625" fill="#F7E9CC">A</text>
-    <rect x="466" y="530" width="96" height="150" rx="18" fill="#2F7F7A" stroke="#5B3A29" stroke-width="6"/>
-    <text x="514" y="595" fill="#F7E9CC">M</text>
-    <rect x="700" y="575" width="96" height="110" rx="18" fill="#E9B63B" stroke="#5B3A29" stroke-width="6"/>
-    <text x="748" y="640" fill="#5B3A29">Z</text>
-  </g>
-
-  <!-- Bewegungsstriche: Platte wird einsortiert -->
-  <g stroke="#5B3A29" stroke-width="14" stroke-linecap="round">
-    <line x1="300" y1="200" x2="300" y2="280"/>
-    <line x1="260" y1="250" x2="260" y2="300"/>
-    <line x1="740" y1="200" x2="740" y2="280"/>
-    <line x1="780" y1="250" x2="780" y2="300"/>
-  </g>
-
-  <!-- Platte, die gerade einsortiert wird -->
-  <g transform="rotate(-8 520 330)">
-    <circle cx="520" cy="330" r="150" fill="url(#vinyl)" stroke="#F7E9CC" stroke-width="8"/>
-    <circle cx="520" cy="330" r="132" fill="none" stroke="#4A423E" stroke-width="3"/>
-    <circle cx="520" cy="330" r="105" fill="none" stroke="#4A423E" stroke-width="3"/>
-    <circle cx="520" cy="330" r="50" fill="#E8772E"/>
-    <circle cx="520" cy="330" r="7" fill="#1E1A18"/>
-  </g>
-
-  <!-- Holzkiste (Vorderseite) -->
-  <g>
-    <path d="M 200 650 L 824 650 L 800 880 L 224 880 Z" fill="url(#wood)" stroke="#4A2C1B" stroke-width="8" stroke-linejoin="round"/>
-    <line x1="208" y1="726" x2="816" y2="726" stroke="#4A2C1B" stroke-width="5" opacity="0.6"/>
-    <line x1="216" y1="803" x2="808" y2="803" stroke="#4A2C1B" stroke-width="5" opacity="0.6"/>
-    <rect x="432" y="680" width="160" height="34" rx="17" fill="#3B2414"/>
-    <!-- Etikett -->
-    <rect x="392" y="752" width="240" height="96" rx="10" fill="#F7E9CC" stroke="#4A2C1B" stroke-width="5"/>
-    <g stroke="#5B3A29" stroke-width="10" stroke-linecap="round">
-      <line x1="420" y1="778" x2="604" y2="778"/>
-      <line x1="420" y1="800" x2="560" y2="800"/>
-      <line x1="420" y1="822" x2="520" y2="822"/>
-    </g>
+  <!-- Register-Reiter A-Z rechts -->
+  <g font-family="Lucida Grande, DejaVu Sans, Helvetica, sans-serif" font-weight="bold" font-size="46" text-anchor="middle">
+    <rect x="726" y="432" width="112" height="64" rx="14" fill="#F4F6F8" stroke="#8C99A8" stroke-width="4"/>
+    <text x="782" y="481" fill="#2D6FC4">A–Z</text>
   </g>
 </svg>
