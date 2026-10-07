@@ -152,10 +152,11 @@ def real_album_page():
 class AlbumSession:
     def __init__(self):
         self.calls = []
+        self.track_page = real_track_page()
 
     def get(self, url, params=None, headers=None, timeout=None):
         self.calls.append(url)
-        return Resp(real_album_page() if url == ALBUM_URL else real_track_page())
+        return Resp(real_album_page() if url == ALBUM_URL else self.track_page)
 
 
 def test_single_track_gets_number_and_date_from_album_page():
@@ -164,6 +165,18 @@ def test_single_track_gets_number_and_date_from_album_page():
     assert (t.name, t.track_number, t.track_total, t.release_date) == ("Second Song", 2, 3, "2024-02-16")
     assert (t.release, t.label, t.album_artist) == ("Deep EP", "Some Label", "Some Artist")
     assert s.calls == [TRACK_URL, ALBUM_URL]
+
+
+def test_album_page_wins_and_is_loaded_once():
+    """Auch wenn die Track-Seite schon Daten hat, gelten die der Album-Seite – geladen nur einmal pro Album."""
+    s = AlbumSession()
+    s.track_page = real_track_page(tralbum={"album_release_date": "1 Jan 2020 00:00:00 GMT",
+                                            "trackinfo": [{"track_num": 7}]})
+    c = BandcampClient(session=s, backoff=0)
+    [t] = c.from_url(TRACK_URL)
+    [t2] = c.from_url(TRACK_URL)
+    assert (t.track_number, t.release_date) == (2, "2024-02-16") == (t2.track_number, t2.release_date)
+    assert s.calls.count(ALBUM_URL) == 1
 
 
 def test_album_url_from_page_data_when_json_ld_has_no_id():

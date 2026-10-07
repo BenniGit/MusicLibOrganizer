@@ -278,6 +278,7 @@ class BandcampClient:
         self.max_results = max_results
         self.backoff = backoff
         self.breaker = http.CircuitBreaker("Bandcamp")
+        self._albums: dict[str, list[TrackMeta]] = {}
 
     def _request(self, method: str, url: str, **kwargs) -> requests.Response:
         try:
@@ -311,19 +312,27 @@ class BandcampClient:
         page = self._request("GET", SEARCH_URL, params={"q": query, "item_type": "t"}).text
         return [{"url": u} for u in parse_search(page, self.max_results)]
 
+    def _album(self, album_url: str) -> list[TrackMeta]:
+        """Album-Seite laden (pro Sitzung nur einmal je Album)."""
+        if album_url not in self._albums:
+            try:
+                self._albums[album_url] = parse_album_page(self._request("GET", album_url).text, album_url)
+            except BandcampError:
+                return []  # nicht cachen – beim nächsten Track erneut versuchen
+        return self._albums[album_url]
+
     def _track(self, url: str, page: str | None = None) -> TrackMeta | None:
-        """Track-Seite lesen; fehlen Tracknummer oder Datum, aus der Album-Seite ergänzen."""
+        """Track-Seite lesen und, wenn der Track zu einem Album gehört, mit der Album-Seite abgleichen.
+
+        Die Album-Seite ist für alles, was das Release betrifft, die verlässlichere Quelle: Tracknummer,
+        Trackanzahl, Datum, Album-Artist, Label und Cover – und damit für alle Tracks eines Albums einheitlich.
+        """
         page = self._request("GET", url).text if page is None else page
         meta = parse_track_page(page, url)
-        if meta is None or (meta.track_number and meta.track_total and meta.release_date):
-            return meta
-        album_url = album_url_of(page, url)
+        album_url = album_url_of(page, url) if meta else ""
         if not album_url:
             return meta
-        try:
-            tracks = parse_album_page(self._request("GET", album_url).text, album_url)
-        except BandcampError:
-            return meta
+        tracks = self._album(album_url)
         path = urlsplit(url).path.rstrip("/")
         match = next((t for t in tracks if urlsplit(t.url).path.rstrip("/") == path), None) or next(
             (t for t in tracks if (t.name, t.mix) == (meta.name, meta.mix)), None)
@@ -331,13 +340,13 @@ class BandcampClient:
             return meta
         return replace(
             meta,
-            track_number=meta.track_number or match.track_number,
-            track_total=meta.track_total or match.track_total,
-            release_date=meta.release_date or match.release_date,
-            release=meta.release or match.release,
-            label=meta.label or match.label,
+            track_number=match.track_number or meta.track_number,
+            track_total=match.track_total or meta.track_total,
+            release_date=match.release_date or meta.release_date,
+            release=match.release or meta.release,
+            label=match.label or meta.label,
             album_artist=match.album_artist or meta.album_artist,
-            image_url=meta.image_url or match.image_url,
+            image_url=match.image_url or meta.image_url,
         )
 
     def search_text(self, query: str) -> list[TrackMeta]:

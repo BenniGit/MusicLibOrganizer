@@ -8,10 +8,14 @@ Fenster und Dialoge der App, unabhängig vom Hell-/Dunkelmodus des Systems.
 from __future__ import annotations
 
 import sys
+import tempfile
 from pathlib import Path
 
-from PySide6.QtCore import QRectF, Qt
-from PySide6.QtGui import QBrush, QColor, QFont, QGradient, QIcon, QLinearGradient, QPainter, QPainterPath, QPalette
+from PySide6.QtCore import QPointF, QRectF, Qt
+from PySide6.QtGui import (
+    QBrush, QColor, QFont, QGradient, QIcon, QImage, QLinearGradient, QPainter, QPainterPath, QPalette, QPen,
+    QPolygonF,
+)
 from PySide6.QtWidgets import QApplication, QFrame, QLabel, QProgressBar, QPushButton, QVBoxLayout, QWidget
 
 ICON_PATH = Path(__file__).resolve().parent / "resources" / "icon.png"
@@ -110,6 +114,28 @@ QRadioButton::indicator:checked {{
     background: qradialgradient(cx:0.5, cy:0.5, radius:0.5, fx:0.5, fy:0.5,
         stop:0 #10294F, stop:0.32 #10294F, stop:0.42 #6AA6EA, stop:1 #BFE0FB);
 }}
+QCheckBox::indicator, QTableView::indicator, QGroupBox::indicator {{
+    width: 13px; height: 13px; border-radius: 3px; border: 1px solid #4A78B8; background: {GLASS};
+}}
+QCheckBox::indicator:checked, QTableView::indicator:checked, QGroupBox::indicator:checked {{
+    border-color: #1F4E96; background: {GLASS_STRONG}; image: url({{check}});
+}}
+QCheckBox::indicator:disabled {{ border-color: #A9BBD3; background: {GLASS_DISABLED}; }}
+
+QSpinBox, QDoubleSpinBox {{ border-radius: 4px; padding: 1px 18px 1px 4px; }}
+QSpinBox::up-button, QDoubleSpinBox::up-button, QSpinBox::down-button, QDoubleSpinBox::down-button {{
+    subcontrol-origin: border; width: 16px; border-left: 1px solid #4A78B8; background: {GLASS};
+}}
+QSpinBox::up-button, QDoubleSpinBox::up-button {{
+    subcontrol-position: top right; border-top-right-radius: 4px; border-bottom: 1px solid #9DB6D8;
+}}
+QSpinBox::down-button, QDoubleSpinBox::down-button {{ subcontrol-position: bottom right; border-bottom-right-radius: 4px; }}
+QSpinBox::up-button:pressed, QDoubleSpinBox::up-button:pressed,
+QSpinBox::down-button:pressed, QDoubleSpinBox::down-button:pressed {{ background: {GLASS_PRESSED}; }}
+QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {{ image: url({{up}}); width: 8px; height: 5px; }}
+QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {{ image: url({{down}}); width: 8px; height: 5px; }}
+QComboBox::down-arrow {{ image: url({{down_white}}); width: 9px; height: 6px; }}
+
 QGroupBox {{
     border: 1px solid #8FAAD0; border-radius: 8px; margin-top: 14px; padding-top: 6px;
     background: rgba(255, 255, 255, 90);
@@ -171,6 +197,44 @@ QStatusBar {{ background: transparent; }}
 """
 
 
+def _write_glyphs() -> dict[str, str]:
+    """Häkchen und Pfeile als kleine PNGs – Stylesheets können Symbole nur als Bild einbinden."""
+    folder = Path(tempfile.gettempdir()) / "musiclib-theme"
+    folder.mkdir(exist_ok=True)
+
+    def draw(name: str, w: int, h: int, paint) -> str:
+        img = QImage(w * 4, h * 4, QImage.Format_ARGB32)
+        img.fill(Qt.transparent)
+        p = QPainter(img)
+        p.setRenderHint(QPainter.Antialiasing)
+        p.scale(4, 4)
+        paint(p)
+        p.end()
+        path = folder / f"{name}.png"
+        img.save(str(path))
+        return path.as_posix()
+
+    def check(p: QPainter) -> None:
+        pen = QPen(QColor("#FFFFFF"), 2.2, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)
+        p.setPen(pen)
+        p.drawPolyline(QPolygonF([QPointF(2.5, 7), QPointF(5.5, 10), QPointF(10.5, 3)]))
+
+    def arrow(color: str, up: bool):
+        def paint(p: QPainter) -> None:
+            p.setPen(Qt.NoPen)
+            p.setBrush(QColor(color))
+            pts = [QPointF(0, 5), QPointF(8, 5), QPointF(4, 0)] if up else [QPointF(0, 0), QPointF(8, 0), QPointF(4, 5)]
+            p.drawPolygon(QPolygonF(pts))
+        return paint
+
+    return {
+        "check": draw("check", 13, 13, check),
+        "up": draw("up", 8, 5, arrow(INK, True)),
+        "down": draw("down", 8, 5, arrow(INK, False)),
+        "down_white": draw("down-white", 8, 5, arrow("#FFFFFF", False)),
+    }
+
+
 def window_brush() -> QBrush:
     """Glatter iTunes-5-Verlauf, der sich über jedes Fenster spannt."""
     g = QLinearGradient(0, 0, 0, 1)
@@ -221,7 +285,14 @@ def apply(app: QApplication) -> None:
     font.setFamilies(FONT_FAMILIES)
     font.setPointSize(13 if sys.platform == "darwin" else 10)
     app.setFont(font)
-    app.setStyleSheet(STYLESHEET)
+    try:
+        glyphs = _write_glyphs()
+    except OSError:
+        glyphs = {"check": "", "up": "", "down": "", "down_white": ""}
+    sheet = STYLESHEET
+    for key, path in glyphs.items():
+        sheet = sheet.replace(f"url({{{key}}})", f'url("{path}")' if path else "none")
+    app.setStyleSheet(sheet)
     app.setWindowIcon(app_icon())
 
 
