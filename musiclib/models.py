@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
+from urllib.parse import quote_plus
 
 LOSSLESS_EXTENSIONS = {".flac", ".wav", ".aiff", ".aif"}
 SUPPORTED_EXTENSIONS = {".mp3"} | LOSSLESS_EXTENSIONS
@@ -71,6 +72,17 @@ class TrackMeta:
     disc_number: int | None = None
     release_id: str = ""
     enriched: bool = False  # Release-Details (Tracknummer, Album-Artist) geladen
+    restricted: bool = False  # Beatport verkauft das Release im Land des Nutzers nicht (Shop-Seite bleibt leer)
+
+    @property
+    def search_url(self) -> str:
+        """Suche nach dem Track auf der Quelle – Ersatz, wenn die Track-Seite nicht lädt."""
+        q = quote_plus(f"{self.artist} {self.name} {self.mix}".strip())
+        if self.source == "Beatport":
+            return f"https://www.beatport.com/search/tracks?q={q}"
+        if self.source == "Bandcamp":
+            return f"https://bandcamp.com/search?q={q}&item_type=t"
+        return ""
 
     @property
     def key(self) -> tuple[str, str]:

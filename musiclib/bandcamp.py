@@ -8,6 +8,7 @@ from __future__ import annotations
 import html
 import json
 import re
+from dataclasses import replace
 from datetime import datetime
 from urllib.parse import urlsplit, urlunsplit
 
@@ -30,6 +31,10 @@ _ITEMURL_RE = re.compile(r'<div class="itemurl">\s*<a href="([^"]+)"', re.I)
 _HEADING_RE = re.compile(r'<div class="heading">\s*<a href="([^"]+)"', re.I)
 _LDJSON_RE = re.compile(r'<script type="application/ld\+json"[^>]*>(.*?)</script>', re.S | re.I)
 _DURATION_RE = re.compile(r"P(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?")
+# Seitendaten, die Bandcamps eigenes Skript nutzt (HTML-escaptes JSON im Attribut data-tralbum)
+_TRALBUM_RE = re.compile(r'data-tralbum="([^"]*)"')
+# Sichtbarer Text unter der Trackliste: „released February 16, 2024“
+_RELEASED_RE = re.compile(r"released\s+([A-Z][a-z]+\s+\d{1,2},\s+\d{4})")
 
 
 class BandcampError(RuntimeError):
@@ -60,12 +65,78 @@ def parse_duration(s: str) -> int | None:
 
 
 def parse_date(s: str) -> str:
-    for fmt in ("%d %b %Y %H:%M:%S %Z", "%d %b %Y", "%Y-%m-%d"):
+    s = (s or "").strip()
+    for fmt in ("%d %b %Y %H:%M:%S %Z", "%d %b %Y %H:%M:%S", "%d %b %Y", "%Y-%m-%d", "%B %d, %Y", "%d %B %Y"):
         try:
-            return datetime.strptime((s or "").strip(), fmt).strftime("%Y-%m-%d")
+            return datetime.strptime(s, fmt).strftime("%Y-%m-%d")
         except ValueError:
             continue
-    return ""
+    m = re.match(r"(\d{4}-\d{2}-\d{2})T", s)  # ISO mit Uhrzeit: 2024-02-16T00:00:00Z
+    return m.group(1) if m else ""
+
+
+def _tralbum(page: str) -> dict:
+    m = _TRALBUM_RE.search(page)
+    if not m:
+        return {}
+    try:
+        data = json.loads(html.unescape(m.group(1)))
+    except ValueError:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def page_date(page: str, *candidates: str) -> str:
+    """Erscheinungsdatum: zuerst die übergebenen Felder, dann die Seitendaten, zuletzt der sichtbare Text."""
+    tralbum = _tralbum(page)
+    current = tralbum.get("current") or {}
+    for value in (*candidates, tralbum.get("album_release_date"), current.get("release_date"),
+                  current.get("publish_date")):
+        date = parse_date(value or "")
+        if date:
+            return date
+    m = _RELEASED_RE.search(page)
+    return parse_date(m.group(1)) if m else ""
+
+
+def _int(value) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    return int(value) if isinstance(value, str) and value.isdigit() else None
+
+
+def _track_number(data: dict, page: str) -> int | None:
+    """Tracknummer aus JSON-LD (additionalProperty „tracknum“) oder den Seitendaten."""
+    for prop in data.get("additionalProperty") or []:
+        if isinstance(prop, dict) and prop.get("name") in ("tracknum", "track_num"):
+            num = _int(prop.get("value"))
+            if num:
+                return num
+    for info in _tralbum(page).get("trackinfo") or []:
+        num = _int((info or {}).get("track_num"))
+        if num:
+            return num
+    num = re.search(r'"track_num"\s*:\s*(\d+)', page) or re.search(r'&quot;track_num&quot;:(\d+)', page)
+    return int(num.group(1)) if num else _int(data.get("position"))
+
+
+def album_url_of(page: str, url: str) -> str:
+    """URL des Albums, zu dem eine Track-Seite gehört ("" bei Singles ohne Album)."""
+    for data in _ld_blocks(page):
+        if data.get("@type") != "MusicRecording":
+            continue
+        album = data.get("inAlbum") or {}
+        if isinstance(album, list):
+            album = album[0] if album else {}
+        if "/album/" in (album.get("@id") or ""):
+            return _strip_query(album["@id"])
+    rel = _tralbum(page).get("album_url") or ""
+    if rel.startswith("/album/"):
+        p = urlsplit(url)
+        return urlunsplit((p.scheme, p.netloc, rel, "", ""))
+    return _strip_query(rel) if "/album/" in rel else ""
 
 
 def _name(obj) -> str:
@@ -121,10 +192,10 @@ def parse_album_page(page: str, url: str) -> list[TrackMeta]:
                 release=data.get("name") or "", label=label,
                 genre=keywords[0].title() if keywords else "", sub_genre=", ".join(keywords[1:4]),
                 isrc=item.get("isrcCode") or "",
-                release_date=parse_date(data.get("datePublished") or ""),
+                release_date=page_date(page, data.get("datePublished") or ""),
                 length_ms=parse_duration(item.get("duration") or ""), image_url=image,
                 source="Bandcamp", url=track_url, album_artist=album_artist,
-                track_number=entry.get("position") if isinstance(entry.get("position"), int) else i,
+                track_number=_int(entry.get("position")) or _track_number(item, "") or i,
                 track_total=total, enriched=True,
             ))
         return out
@@ -155,7 +226,9 @@ def parse_track_page(page: str, url: str) -> TrackMeta | None:
         if isinstance(album, list):
             album = album[0] if album else {}
         album_artist = _name(album.get("byArtist")) or artist
-        num = re.search(r'"track_num"\s*:\s*(\d+)', page) or re.search(r'&quot;track_num&quot;:(\d+)', page)
+        single = not album or album.get("albumReleaseType") == "SingleRelease" or album.get("numTracks") == 1
+        number = _track_number(data, page) or (1 if single else None)
+        total = _int(album.get("numTracks")) or (1 if single else None)
         return TrackMeta(
             id=url,
             name=name,
@@ -166,14 +239,14 @@ def parse_track_page(page: str, url: str) -> TrackMeta | None:
             genre=keywords[0].title() if keywords else "",
             sub_genre=", ".join(keywords[1:4]),
             isrc=data.get("isrcCode") or "",
-            release_date=parse_date(data.get("datePublished") or ""),
+            release_date=page_date(page, data.get("datePublished") or "", album.get("datePublished") or ""),
             length_ms=parse_duration(data.get("duration") or ""),
             image_url=image,
             source="Bandcamp",
             url=url,
             album_artist=album_artist,
-            track_number=int(num.group(1)) if num else (data.get("position") if isinstance(data.get("position"), int) else None),
-            track_total=album.get("numTracks") if isinstance(album.get("numTracks"), int) else None,
+            track_number=number,
+            track_total=total,
             enriched=True,
         )
     return None
@@ -238,11 +311,40 @@ class BandcampClient:
         page = self._request("GET", SEARCH_URL, params={"q": query, "item_type": "t"}).text
         return [{"url": u} for u in parse_search(page, self.max_results)]
 
+    def _track(self, url: str, page: str | None = None) -> TrackMeta | None:
+        """Track-Seite lesen; fehlen Tracknummer oder Datum, aus der Album-Seite ergänzen."""
+        page = self._request("GET", url).text if page is None else page
+        meta = parse_track_page(page, url)
+        if meta is None or (meta.track_number and meta.track_total and meta.release_date):
+            return meta
+        album_url = album_url_of(page, url)
+        if not album_url:
+            return meta
+        try:
+            tracks = parse_album_page(self._request("GET", album_url).text, album_url)
+        except BandcampError:
+            return meta
+        path = urlsplit(url).path.rstrip("/")
+        match = next((t for t in tracks if urlsplit(t.url).path.rstrip("/") == path), None) or next(
+            (t for t in tracks if (t.name, t.mix) == (meta.name, meta.mix)), None)
+        if match is None:
+            return meta
+        return replace(
+            meta,
+            track_number=meta.track_number or match.track_number,
+            track_total=meta.track_total or match.track_total,
+            release_date=meta.release_date or match.release_date,
+            release=meta.release or match.release,
+            label=meta.label or match.label,
+            album_artist=match.album_artist or meta.album_artist,
+            image_url=meta.image_url or match.image_url,
+        )
+
     def search_text(self, query: str) -> list[TrackMeta]:
         out = []
         for hit in self._find(query):
             try:
-                meta = parse_track_page(self._request("GET", hit["url"]).text, hit["url"])
+                meta = self._track(hit["url"])
             except BandcampError:
                 meta = None
             if meta is None and hit.get("name"):
@@ -266,7 +368,7 @@ class BandcampClient:
         album = parse_album_page(page, url)
         if album:
             return album
-        meta = parse_track_page(page, url)
+        meta = self._track(url, page)
         if meta is None:
             raise BandcampError("auf der Seite wurden keine Track-Daten gefunden")
         return [meta]

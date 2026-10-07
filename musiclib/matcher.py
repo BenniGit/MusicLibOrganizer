@@ -154,3 +154,6 @@ def match_item(item: LibraryItem, sources, match_threshold: float = MATCH_THRESH
         item.selected = None
     if item.selected is not None:
         item.selected = enrich(item.selected, sources)
+        if item.selected.restricted:
+            note = "Beatport-Seite in deinem Land nicht verfügbar – Tracknummer geschätzt, bitte prüfen"
+            item.message = "; ".join(m for m in (item.message, note) if m)

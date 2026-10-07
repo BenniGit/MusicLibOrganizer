@@ -484,7 +484,11 @@ class MainWindow(QMainWindow):
                 cell.setToolTip("Fehlende Pflichtfelder – Rechtsklick → Metadaten bearbeiten")
                 cell.setBackground(MISSING_COLOR if missing else QColor(0, 0, 0, 0))
             else:
-                cell.setToolTip(str(loc.path) if col == COL_FILE else (meta.url if col == COL_SOURCE and meta else val))
+                tip = str(loc.path) if col == COL_FILE else (meta.url if col == COL_SOURCE and meta else val)
+                if col == COL_SOURCE and meta and meta.restricted:
+                    tip += ("\nBeatport verkauft dieses Release in deinem Land nicht – die Shop-Seite lädt nicht. "
+                            "Tracknummer aus der Reihenfolge der Beatport-IDs ermittelt; bitte kurz prüfen.")
+                cell.setToolTip(tip)
         self._updating_table = False
         self.table.setRowHidden(row, not FILTERS[self.filter_combo.currentText()](self, it))
 
@@ -554,8 +558,13 @@ class MainWindow(QMainWindow):
             menu.addAction("Metadaten bearbeiten…" if it.selected else "Metadaten manuell erfassen…",
                            lambda: self.edit_metadata(row))
             if it.selected and it.selected.url:
-                menu.addAction(f"Auf {it.selected.source} öffnen",
-                               lambda: QDesktopServices.openUrl(QUrl(it.selected.url)))
+                sel = it.selected
+                menu.addAction(f"Auf {sel.source} öffnen" + (" (in deinem Land gesperrt – Seite bleibt leer)"
+                                                              if sel.restricted else ""),
+                               lambda: QDesktopServices.openUrl(QUrl(sel.url)))
+            if it.selected and it.selected.search_url:
+                sel = it.selected
+                menu.addAction(f"Auf {sel.source} suchen", lambda: QDesktopServices.openUrl(QUrl(sel.search_url)))
             menu.addSeparator()
         if len(rows) > 1:
             menu.addAction(f"Release-URL für {len(rows)} Tracks übernehmen…", lambda: self.from_url(rows))

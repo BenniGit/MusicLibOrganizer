@@ -42,7 +42,10 @@ VARIOUS_LIMIT = 3  # mehr Release-Artists -> Compilation
 
 
 class BeatportError(RuntimeError):
-    pass
+    def __init__(self, message: str, status: int | None = None, territory: bool = False):
+        super().__init__(message)
+        self.status = status
+        self.territory = territory  # „Territory Restricted“: im Land des Nutzers nicht verkauft
 
 
 class BeatportClient:
@@ -66,6 +69,7 @@ class BeatportClient:
         self._token: dict | None = None
         self._release_cache: dict[str, dict] = {}
         self._release_tracks_cache: dict[str, list[dict]] = {}
+        self._restricted: set[str] = set()  # Releases, die Beatport im Land des Nutzers sperrt
 
     # ------------------------------------------------------------------ auth
     def _discover_client_id(self) -> str:
@@ -195,7 +199,8 @@ class BeatportClient:
                 time.sleep(float(r.headers.get("Retry-After", 2 ** attempt)))
                 continue
             if r.status_code != 200:
-                raise BeatportError(http.describe(r.status_code, r.text))
+                raise BeatportError(http.describe(r.status_code, r.text), status=r.status_code,
+                                    territory="territory restricted" in r.text.lower())
             return r.json()
         raise BeatportError(f"GET {path}: zu viele Wiederholungen")
 
@@ -220,10 +225,25 @@ class BeatportClient:
     def search_text(self, query: str) -> list[TrackMeta]:
         return self.search_tracks(query, per_page=25)
 
-    def release(self, release_id: str) -> dict:
+    def release(self, release_id: str, name: str = "") -> dict:
         if release_id not in self._release_cache:
-            self._release_cache[release_id] = self._get(f"/catalog/releases/{release_id}/")
+            try:
+                self._release_cache[release_id] = self._get(f"/catalog/releases/{release_id}/")
+            except BeatportError as e:
+                if not e.territory:
+                    raise
+                self._restricted.add(release_id)
+                self._release_cache[release_id] = self._release_from_search(release_id, name)
         return self._release_cache[release_id]
+
+    def _release_from_search(self, release_id: str, name: str) -> dict:
+        """Release-Daten über die Suche – die liefert auch Releases, deren Detailseite gesperrt ist."""
+        if name:
+            data = self._get("/catalog/search/", {"q": name, "type": "releases", "per_page": 25})
+            for rel in data.get("releases", []):
+                if str(rel.get("id")) == release_id:
+                    return rel
+        return {}
 
     def release_track_ids(self, release_id: str) -> list[str]:
         """Track-IDs eines Releases in Tracklisten-Reihenfolge.
@@ -235,20 +255,40 @@ class BeatportClient:
 
     def _release_track_objects(self, release_id: str) -> list[dict]:
         if release_id not in self._release_tracks_cache:
-            tracks: list[dict] = []
-            page = 1
-            while True:
-                data = self._get(f"/catalog/releases/{release_id}/tracks/", {"per_page": 100, "page": page})
-                tracks += data.get("results", [])
-                if not data.get("next") or page >= 10:
-                    break
-                page += 1
+            try:
+                tracks = self._paged(f"/catalog/releases/{release_id}/tracks/", {})
+            except BeatportError as e:
+                if not e.territory:
+                    raise
+                # Im Land des Nutzers gesperrt: Die Trackliste gibt es dann nur noch über /catalog/tracks/,
+                # allerdings ohne Reihenfolge. Beatport vergibt die IDs fast immer in Tracklisten-Reihenfolge.
+                self._restricted.add(release_id)
+                tracks = sorted(self._paged("/catalog/tracks/", {"release_id": release_id}), key=lambda t: int(t["id"]))
             self._release_tracks_cache[release_id] = tracks
         return self._release_tracks_cache[release_id]
 
+    def _paged(self, path: str, params: dict) -> list[dict]:
+        out: list[dict] = []
+        page = 1
+        while True:
+            data = self._get(path, {**params, "per_page": 100, "page": page})
+            out += data.get("results", [])
+            if not data.get("next") or page >= 10:
+                return out
+            page += 1
+
     def track(self, track_id: str) -> TrackMeta:
         """Ein Track per Beatport-ID (z. B. aus einer Track-URL), inklusive Release-Details."""
-        return self.enrich(TrackMeta.from_api(self._get(f"/catalog/tracks/{track_id}/")))
+        try:
+            data = self._get(f"/catalog/tracks/{track_id}/")
+        except BeatportError as e:
+            if not e.territory:
+                raise
+            found = self._get("/catalog/tracks/", {"id": track_id}).get("results") or []
+            if not found:
+                raise
+            data = found[0]
+        return self.enrich(TrackMeta.from_api(data))
 
     def release_tracks(self, release_id: str) -> list[TrackMeta]:
         """Alle Tracks eines Releases in Tracklisten-Reihenfolge (z. B. aus einer Release-URL)."""
@@ -258,17 +298,29 @@ class BeatportClient:
         """Ergänzt Album-Artist, Tracknummer und Trackanzahl aus dem Release."""
         if meta.enriched or not meta.release_id:
             return meta
-        rel = self.release(meta.release_id)
+        rel = self.release(meta.release_id, meta.release)
+        tracks = self._release_track_objects(meta.release_id)
+        ids = [str(t["id"]) for t in tracks]
         artists = [a["name"] for a in rel.get("artists") or []]
+        if not artists:  # gesperrtes Release ohne Artist-Angabe: aus den Tracks zusammensetzen
+            for t in tracks:
+                artists += [a["name"] for a in t.get("artists") or [] if a["name"] not in artists]
         album_artist = VARIOUS_ARTISTS if len(artists) > VARIOUS_LIMIT else ", ".join(artists)
-        ids = self.release_track_ids(meta.release_id)
+        restricted = meta.release_id in self._restricted
+        if str(meta.id) not in ids:
+            # Track fehlt in der Shop-Trackliste (aus dem Verkauf genommen): Seite lädt nicht,
+            # Nummer aus der vollständigen, nach ID sortierten Liste schätzen
+            full = sorted(self._paged("/catalog/tracks/", {"release_id": meta.release_id}), key=lambda t: int(t["id"]))
+            if str(meta.id) in [str(t["id"]) for t in full]:
+                ids, restricted = [str(t["id"]) for t in full], True
         number = ids.index(str(meta.id)) + 1 if str(meta.id) in ids else None
         return replace(
             meta,
             album_artist=album_artist,
             track_number=number,
-            track_total=rel.get("track_count") or len(ids) or None,
+            track_total=(len(ids) if restricted else rel.get("track_count")) or len(ids) or None,
             catalog_number=meta.catalog_number or rel.get("catalog_number") or "",
+            restricted=restricted,
             enriched=True,
         )
 
