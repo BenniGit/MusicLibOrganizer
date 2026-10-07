@@ -1,0 +1,51 @@
+name: macOS-App (DMG)
+
+on:
+  push:
+    branches: [main, "claude/**"]
+    paths: ["music-library-app/**", ".github/workflows/macos-app.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write  # zum Aktualisieren des Download-Releases
+
+jobs:
+  build:
+    runs-on: macos-latest  # Apple Silicon (arm64)
+    defaults:
+      run:
+        working-directory: music-library-app
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Abhängigkeiten
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e '.[dev,app]'
+          brew install ffmpeg
+
+      - name: Tests
+        run: pytest -q
+
+      - name: App und DMG bauen
+        run: ./packaging/build_macos.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MusicLib-Organizer-dmg
+          path: music-library-app/dist/*.dmg
+
+      - name: Download-Release aktualisieren
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="app-${GITHUB_REF_NAME//\//-}"
+          gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
+          gh release create "$TAG" dist/*.dmg \
+            --target "$GITHUB_SHA" --prerelease \
+            --title "MusicLib Organizer (${GITHUB_REF_NAME}, ${GITHUB_SHA::7})" \
+            --notes "Automatisch gebaut aus ${GITHUB_SHA}. Unsigniert: beim ersten Start Rechtsklick → Öffnen, oder Systemeinstellungen → Datenschutz & Sicherheit → „Trotzdem öffnen“."

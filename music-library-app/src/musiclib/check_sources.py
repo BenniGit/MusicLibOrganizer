@@ -1,7 +1,7 @@
 """Prüft die Verbindung zu Discogs und Beatport, ohne Zugangsdaten auszugeben.
 
-Zugangsdaten kommen aus Umgebungsvariablen:
-    DISCOGS_TOKEN, BEATPORT_USERNAME, BEATPORT_PASSWORD
+Zugangsdaten kommen aus Umgebungsvariablen oder dem macOS-Schlüsselbund
+(siehe credentials.py): DISCOGS_TOKEN, BEATPORT_USERNAME, BEATPORT_PASSWORD
 
 Beatport hat keinen offiziellen API-Zugang für Privatentwickler. Wie beets-beatport4
 nutzen wir die Client-ID der API-Doku-Seite plus den eigenen Login (OAuth-Code-Flow).
@@ -9,12 +9,13 @@ nutzen wir die Client-ID der API-Doku-Seite plus den eigenen Login (OAuth-Code-F
 
 from __future__ import annotations
 
-import os
 import re
 from dataclasses import dataclass
 from urllib.parse import parse_qs, urlparse
 
 import requests
+
+from . import credentials
 
 USER_AGENT = "MusicLibOrganizer/0.1 +https://github.com/BenniGit/MusicLibOrganizer"
 TIMEOUT = 15
@@ -32,13 +33,13 @@ class Check:
 
 
 def _missing(*names: str) -> list[str]:
-    return [n for n in names if not os.environ.get(n)]
+    return [n for n in names if not credentials.get(n)]
 
 
 def check_discogs(session: requests.Session) -> list[Check]:
     if missing := _missing("DISCOGS_TOKEN"):
-        return [Check("Discogs Token", False, f"Umgebungsvariable fehlt: {', '.join(missing)}")]
-    auth = {"Authorization": f"Discogs token={os.environ['DISCOGS_TOKEN']}"}
+        return [Check("Discogs Token", False, f"Zugangsdaten fehlen: {', '.join(missing)}")]
+    auth = {"Authorization": f"Discogs token={credentials.get('DISCOGS_TOKEN')}"}
     r = session.get(f"{DISCOGS_API}/oauth/identity", headers=auth, timeout=TIMEOUT)
     checks = [Check("Discogs Token", r.ok,
                     f"gültig, Limit {r.headers.get('X-Discogs-Ratelimit', '?')}/min" if r.ok
@@ -66,8 +67,8 @@ def beatport_client_id(session: requests.Session) -> str | None:
 def beatport_token(session: requests.Session, client_id: str) -> tuple[str | None, Check]:
     """Login + OAuth-Code-Flow. Gibt (access_token, Check) zurück."""
     r = session.post(f"{BEATPORT_API}/auth/login/", timeout=TIMEOUT, json={
-        "username": os.environ["BEATPORT_USERNAME"],
-        "password": os.environ["BEATPORT_PASSWORD"],
+        "username": credentials.get("BEATPORT_USERNAME"),
+        "password": credentials.get("BEATPORT_PASSWORD"),
     })
     if not r.ok:
         return None, Check("Beatport Login", False, f"HTTP {r.status_code}: {r.text[:120]}")
@@ -88,7 +89,7 @@ def beatport_token(session: requests.Session, client_id: str) -> tuple[str | Non
 
 def check_beatport(session: requests.Session) -> list[Check]:
     if missing := _missing("BEATPORT_USERNAME", "BEATPORT_PASSWORD"):
-        return [Check("Beatport Login", False, f"Umgebungsvariable fehlt: {', '.join(missing)}")]
+        return [Check("Beatport Login", False, f"Zugangsdaten fehlen: {', '.join(missing)}")]
     client_id = beatport_client_id(session)
     checks = [Check("Beatport Client-ID", bool(client_id),
                     "auf der Doku-Seite gefunden" if client_id else "nicht gefunden")]

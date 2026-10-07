@@ -12,7 +12,21 @@ Hält die MP3/FLAC-Sammlung sauber getaggt. Plan: siehe „Plan: Music Library A
 - Nach jedem Reset wird die Datei neu gelesen; bleibt etwas übrig, bricht die Datei mit Fehler ab.
 - Vor dem ersten Schreiben wird das Original gesichert (nie überschrieben, wiederherstellbar).
 
-## Benutzung
+## Mac-App (DMG)
+
+Jeder Push baut auf GitHub Actions (macOS, Apple Silicon) die App und ein DMG:
+**Releases** → „MusicLib Organizer (…)“ → `MusicLib-Organizer-<version>-arm64.dmg`.
+
+1. DMG öffnen, „MusicLib Organizer“ auf „Programme“ ziehen.
+2. Erster Start: Die App ist nicht von Apple notarisiert. Rechtsklick → **Öffnen**, oder
+   Systemeinstellungen → Datenschutz & Sicherheit → **Trotzdem öffnen**.
+3. Musikordner und Sicherungsordner wählen, „Reset-Vorschau“ ändert nichts.
+   „Tags zurücksetzen …“ fragt vorher nach. Zugangsdaten landen im macOS-Schlüsselbund.
+
+Lokal bauen (auf dem Mac): `pip install -e '.[app]' && ./packaging/build_macos.sh`.
+Icon ändern: `packaging/icon.svg` bearbeiten, dann `python packaging/make_icon.py`.
+
+## Benutzung (Kommandozeile)
 
 ```sh
 python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'

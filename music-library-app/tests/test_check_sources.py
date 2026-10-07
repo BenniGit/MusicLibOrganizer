@@ -2,6 +2,7 @@ from musiclib.check_sources import run
 
 
 def test_missing_credentials_are_reported_without_network(monkeypatch):
+    monkeypatch.setattr("musiclib.credentials._keyring", lambda: None)
     for name in ("DISCOGS_TOKEN", "BEATPORT_USERNAME", "BEATPORT_PASSWORD"):
         monkeypatch.delenv(name, raising=False)
     checks = run()

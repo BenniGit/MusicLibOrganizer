@@ -7,13 +7,17 @@ name = "musiclib"
 version = "0.1.0"
 description = "Hält eine MP3/FLAC-Sammlung sauber getaggt (Reset, Auto-Tagging, rekordbox)."
 requires-python = ">=3.11"
-dependencies = ["mutagen>=1.47", "requests>=2.31"]
+dependencies = ["mutagen>=1.47", "requests>=2.31", "keyring>=25"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
+app = ["pyinstaller>=6.10", "pillow>=10", "cairosvg>=2.7"]
 
 [project.scripts]
 musiclib = "musiclib.cli:main"
+
+[project.gui-scripts]
+musiclib-app = "musiclib.gui:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
