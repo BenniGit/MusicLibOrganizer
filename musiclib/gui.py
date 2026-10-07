@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 from . import __version__
 from .backup import backup_dir
 from . import credentials
+from . import theme
 from . import rekordbox_db as rbdb
 from .journal import Journal
 from .bandcamp import BandcampClient
@@ -112,53 +113,60 @@ class MainWindow(QMainWindow):
         central = QWidget()
         self.setCentralWidget(central)
         root = QVBoxLayout(central)
+        root.setContentsMargins(12, 8, 12, 6)
+        root.setSpacing(8)
 
-        # --- Ordner + Einstellungen
+        # --- Kopfleiste wie bei iTunes 4: runde Knöpfe links, LCD in der Mitte, Knöpfe rechts
+        head = QHBoxLayout()
+        head.setSpacing(10)
+        self.scan_btn = QPushButton("↻")
+        self.match_btn = QPushButton("🔍")
+        self.cancel_btn = QPushButton("■")
+        self.settings_btn = QPushButton("⚙")
+        self.rekordbox_btn = QPushButton("🎧")
+        self.scan_btn.setToolTip("1. Quellordner scannen")
+        self.match_btn.setToolTip("2. Gescannte Tracks mit Beatport, Discogs und Bandcamp abgleichen")
+        self.cancel_btn.setToolTip("Laufenden Vorgang abbrechen")
+        self.settings_btn.setToolTip("Einstellungen")
+        self.rekordbox_btn.setToolTip("Status anzeigen, Rekordbox auf die neue Library umstellen, Sicherung zurückspielen")
+        self.scan_btn.clicked.connect(self.start_scan)
+        self.match_btn.clicked.connect(self.start_match)
+        self.cancel_btn.clicked.connect(self.cancel)
+        self.settings_btn.clicked.connect(self.open_settings)
+        self.lcd = theme.LcdDisplay(f"MusicLibOrganizer {__version__}", "Bereit")
+        for widgets, labels in (((self.scan_btn, self.match_btn, self.cancel_btn), ("Scannen", "Abgleichen", "Stopp")),
+                                (None, None),
+                                ((self.settings_btn, self.rekordbox_btn), ("Einstellungen", "Rekordbox"))):
+            if widgets is None:
+                head.addWidget(self.lcd, 1)
+                continue
+            for b, text in zip(widgets, labels):
+                b.setProperty("role", "transport")
+                head.addLayout(theme.labeled(b, text))
+        root.addLayout(head)
+
+        # --- Ordner
         top = QGridLayout()
+        top.setHorizontalSpacing(6)
+        top.setVerticalSpacing(4)
         self.src_edit = QLineEdit(self.qsettings.value("source", ""))
         self.dst_edit = QLineEdit(self.qsettings.value("target", ""))
         self.dst_edit.editingFinished.connect(self.refresh_targets)
         for row, (label, edit) in enumerate((("Quelle", self.src_edit), ("Ziel-Bibliothek", self.dst_edit))):
-            top.addWidget(QLabel(label), row, 0)
+            lbl = QLabel(label)
+            lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            top.addWidget(lbl, row, 0)
             top.addWidget(edit, row, 1)
             b = QPushButton("…")
-            b.setFixedWidth(32)
+            b.setFixedWidth(40)
             b.clicked.connect(lambda _=False, e=edit: self.pick_dir(e))
             top.addWidget(b, row, 2)
-        self.settings_btn = QPushButton("⚙  Einstellungen")
-        self.settings_btn.clicked.connect(self.open_settings)
-        top.addWidget(self.settings_btn, 0, 3)
         self.login_label = QLabel("Beatport: nicht angemeldet")
-        top.addWidget(self.login_label, 1, 3)
-        self.rekordbox_btn = QPushButton("🎧  Rekordbox-Umzug")
-        self.rekordbox_btn.setToolTip("Status anzeigen, Rekordbox auf die neue Library umstellen, Sicherung zurückspielen")
-        top.addWidget(self.rekordbox_btn, 0, 4)
+        top.addWidget(self.login_label, 0, 3, 2, 1)
         top.setColumnStretch(1, 1)
         root.addLayout(top)
 
-        # --- Aktionen
-        actions = QHBoxLayout()
-        self.scan_btn = QPushButton("1. Scannen")
-        self.match_btn = QPushButton("2. Abgleichen")
-        self.auto_btn = QPushButton("✔ 100%-Treffer übernehmen")
-        self.auto_btn.setToolTip("Verarbeitet alle Tracks mit 100%-Treffer (Schwelle in den Einstellungen) "
-                                 "und alle manuell bestätigten Tracks – jeweils nur, wenn alle Pflichtfelder gefüllt sind.")
-        self.apply_btn = QPushButton("Markierte ausführen")
-        self.cancel_btn = QPushButton("Abbrechen")
-        self.scan_btn.clicked.connect(self.start_scan)
-        self.match_btn.clicked.connect(self.start_match)
-        self.auto_btn.clicked.connect(self.apply_auto)
-        self.apply_btn.clicked.connect(self.apply_checked)
-        self.cancel_btn.clicked.connect(self.cancel)
-        for b in (self.scan_btn, self.match_btn, self.auto_btn, self.apply_btn, self.cancel_btn):
-            b.setMinimumHeight(32)
-            actions.addWidget(b)
-        self.progress = QProgressBar()
-        self.progress.setFormat("%v / %m")
-        actions.addWidget(self.progress, 1)
-        root.addLayout(actions)
-
-        # --- Filter + Zusammenfassung
+        # --- Filter
         frow = QHBoxLayout()
         frow.addWidget(QLabel("Anzeigen:"))
         self.filter_combo = QComboBox()
@@ -173,10 +181,9 @@ class MainWindow(QMainWindow):
             b.setToolTip(tip)
             b.clicked.connect(fn)
             frow.addWidget(b)
-        self.summary = QLabel("")
-        frow.addWidget(self.summary, 1)
+        frow.addStretch(1)
         hint = QLabel("Doppelklick: Treffer wählen oder URL einfügen · Rechtsklick: weitere Aktionen")
-        hint.setStyleSheet("color: gray")
+        hint.setStyleSheet("color: #3D5677")
         frow.addWidget(hint)
         root.addLayout(frow)
 
@@ -187,6 +194,9 @@ class MainWindow(QMainWindow):
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.verticalHeader().setVisible(False)
+        self.table.setAlternatingRowColors(True)
+        self.table.setShowGrid(False)
+        self.table.verticalHeader().setDefaultSectionSize(self.table.fontMetrics().height() + 6)  # kompakt wie bei iTunes
         hh = self.table.horizontalHeader()
         hh.setSectionResizeMode(QHeaderView.Interactive)
         hh.setStretchLastSection(True)
@@ -208,6 +218,24 @@ class MainWindow(QMainWindow):
         split.addWidget(self.log_view)
         split.setSizes([680, 140])
         root.addWidget(split, 1)
+
+        # --- Fußleiste: Ausführen-Knöpfe links, Zusammenfassung in der Mitte (wie „123 Titel, 8 Std.“)
+        foot = QHBoxLayout()
+        self.auto_btn = QPushButton("✔ 100%-Treffer übernehmen")
+        self.auto_btn.setToolTip("Verarbeitet alle Tracks mit 100%-Treffer (Schwelle in den Einstellungen) "
+                                 "und alle manuell bestätigten Tracks – jeweils nur, wenn alle Pflichtfelder gefüllt sind.")
+        self.apply_btn = QPushButton("Markierte ausführen")
+        self.apply_btn.setProperty("role", "primary")
+        self.auto_btn.clicked.connect(self.apply_auto)
+        self.apply_btn.clicked.connect(self.apply_checked)
+        foot.addWidget(self.auto_btn)
+        foot.addWidget(self.apply_btn)
+        self.summary = QLabel("")
+        self.summary.setAlignment(Qt.AlignCenter)
+        self.summary.setMinimumWidth(1)
+        foot.addWidget(self.summary, 1)
+        root.addLayout(foot)
+        self.statusBar().hide()
 
         # --- Menüs
         m = self.menuBar().addMenu("Datei")
@@ -362,6 +390,7 @@ class MainWindow(QMainWindow):
                                                 QMessageBox.critical(self, "Fehler", msg.splitlines()[0])))
 
         def finished():
+            self.lcd.idle()
             self.update_buttons()
             if on_done:
                 on_done()
@@ -371,9 +400,7 @@ class MainWindow(QMainWindow):
         self.update_buttons()
 
     def on_progress(self, i: int, n: int, text: str) -> None:
-        self.progress.setMaximum(max(n, 1))
-        self.progress.setValue(i)
-        self.statusBar().showMessage(text)
+        self.lcd.show_progress(i, n, text)
 
     def cancel(self) -> None:
         if self.worker:
@@ -501,7 +528,7 @@ class MainWindow(QMainWindow):
             return
         err = validate_template(self.settings.template)
         if err:
-            self.statusBar().showMessage(err)
+            self.lcd.show_message("⚠ Ordner-Vorlage ungültig", err)
             return
         if self.items and self.dst_edit.text():
             pending = [i for i in self.items if i.status != MatchStatus.DONE]
@@ -1157,6 +1184,7 @@ class MainWindow(QMainWindow):
 def main() -> int:
     app = QApplication(sys.argv)
     app.setApplicationName("MusicLibOrganizer")
+    theme.apply(app)
     # Qt-Standardtexte (OK/Abbrechen/Speichern …) in der Systemsprache
     translator = QTranslator(app)
     if translator.load(QLocale.system(), "qtbase", "_", QLibraryInfo.path(QLibraryInfo.TranslationsPath)):
@@ -1170,6 +1198,9 @@ def main() -> int:
         import pyrekordbox.db6.database  # noqa: F401  (im App-Paket enthalten?)
         import sqlcipher3  # noqa: F401
         print("Rekordbox-Datenbankzugriff verfügbar")
+        if theme.app_icon().isNull():
+            raise SystemExit("App-Icon fehlt im Paket (musiclib/resources/icon.png)")
+        print("App-Icon geladen")
         QTimer.singleShot(1500, app.quit)
     return app.exec()
 

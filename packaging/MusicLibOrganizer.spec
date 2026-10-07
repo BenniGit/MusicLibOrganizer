@@ -1,5 +1,6 @@
 # PyInstaller-Rezept:  pyinstaller --noconfirm packaging/MusicLibOrganizer.spec
 # Ergebnis: dist/MusicLibOrganizer.app (macOS) bzw. dist/MusicLibOrganizer/ (Linux/Windows)
+# App-Icon: packaging/build/icon.icns, erzeugt von packaging/make_icns.sh (macOS); fehlt es, bleibt das Standard-Icon.
 import re
 import sys
 from pathlib import Path
@@ -19,6 +20,7 @@ EXCLUDES = [
 a = Analysis(
     [str(ROOT / "packaging" / "launcher.py")],
     pathex=[str(ROOT)],
+    datas=[(str(ROOT / "musiclib" / "resources"), "musiclib/resources")],  # Fenster-/Dock-Icon zur Laufzeit
     hiddenimports=["keyring.backends.macOS", "keyring.backends.Windows", "keyring.backends.SecretService",
                    "sqlcipher3", "pyrekordbox.db6"],
     excludes=EXCLUDES,
@@ -30,9 +32,11 @@ exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name="MusicLibOrganizer", c
 coll = COLLECT(exe, a.binaries, a.datas, name="MusicLibOrganizer")
 
 if sys.platform == "darwin":
+    ICNS = ROOT / "packaging" / "build" / "icon.icns"
     app = BUNDLE(
         coll,
         name="MusicLibOrganizer.app",
+        icon=str(ICNS) if ICNS.exists() else None,
         bundle_identifier="de.bennigit.musiclib-organizer",
         version=VERSION,
         info_plist={

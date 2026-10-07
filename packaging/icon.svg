@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Mac OS X Aqua (2000er): blauer Gel-Ordner, silberne CDs werden einsortiert -->
+  <defs>
+    <linearGradient id="folderBack" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#7DB6EE"/>
+      <stop offset="1" stop-color="#2D6FC4"/>
+    </linearGradient>
+    <linearGradient id="folderFront" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#9CCBF7"/>
+      <stop offset="0.45" stop-color="#4E95E3"/>
+      <stop offset="1" stop-color="#1D5BB5"/>
+    </linearGradient>
+    <linearGradient id="gloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.85"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0.05"/>
+    </linearGradient>
+    <radialGradient id="cd" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0.12" stop-color="#FFFFFF"/>
+      <stop offset="0.35" stop-color="#D7DDE4"/>
+      <stop offset="0.55" stop-color="#F4F6F8"/>
+      <stop offset="0.75" stop-color="#B8C2CD"/>
+      <stop offset="1" stop-color="#E9EDF1"/>
+    </radialGradient>
+    <linearGradient id="rainbow" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#8FD3FF" stop-opacity="0.55"/>
+      <stop offset="0.35" stop-color="#C9A6FF" stop-opacity="0.35"/>
+      <stop offset="0.65" stop-color="#9BF0C8" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#FFB3D9" stop-opacity="0.45"/>
+    </linearGradient>
+    <linearGradient id="note" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.95"/>
+      <stop offset="1" stop-color="#D6E9FB" stop-opacity="0.9"/>
+    </linearGradient>
+    <linearGradient id="reflect" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2D6FC4" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#2D6FC4" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#0B2A55" flood-opacity="0.45"/>
+    </filter>
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#0B2A55" flood-opacity="0.35"/>
+    </filter>
+    <symbol id="disc" viewBox="-200 -200 400 400">
+      <circle r="196" fill="url(#cd)" stroke="#8C99A8" stroke-width="4"/>
+      <circle r="196" fill="url(#rainbow)"/>
+      <circle r="150" fill="none" stroke="#FFFFFF" stroke-opacity="0.6" stroke-width="3"/>
+      <circle r="62" fill="#E3E8EE" stroke="#9AA6B3" stroke-width="3"/>
+      <circle r="26" fill="#FFFFFF" stroke="#9AA6B3" stroke-width="3"/>
+      <path d="M -150 -90 A 175 175 0 0 1 -40 -168" stroke="#FFFFFF" stroke-width="14" stroke-linecap="round" fill="none" opacity="0.9"/>
+    </symbol>
+  </defs>
+
+  <!-- Spiegelung auf der "Glastischplatte" -->
+  <path d="M 150 860 L 874 860 L 850 960 L 174 960 Z" fill="url(#reflect)"/>
+
+  <g filter="url(#shadow)">
+    <!-- Rückwand mit Reiter -->
+    <path d="M 150 300 Q 150 270 180 270 L 400 270 Q 420 270 432 252 L 452 222 Q 464 204 486 204
+             L 600 204 Q 630 204 630 234 L 630 270 L 844 270 Q 874 270 874 300 L 874 820 L 150 820 Z"
+          fill="url(#folderBack)" stroke="#1C4F96" stroke-width="6"/>
+  </g>
+
+  <!-- CDs, die einsortiert werden (hinten nach vorne) -->
+  <g filter="url(#soft)">
+    <use href="#disc" x="200" y="150" width="300" height="300"/>
+    <use href="#disc" x="500" y="96" width="320" height="320"/>
+    <use href="#disc" x="350" y="40" width="330" height="330"/>
+  </g>
+
+  <!-- Vorderseite des Ordners -->
+  <g filter="url(#shadow)">
+    <path d="M 130 420 Q 130 390 160 390 L 864 390 Q 894 390 892 420 L 868 830 Q 866 860 836 860 L 188 860 Q 158 860 156 830 Z"
+          fill="url(#folderFront)" stroke="#1C4F96" stroke-width="6"/>
+  </g>
+  <!-- Aqua-Glanz -->
+  <path d="M 150 420 Q 150 404 170 404 L 854 404 Q 874 404 872 422 L 866 560 Q 512 610 158 560 Z" fill="url(#gloss)"/>
+
+  <!-- Eingeprägte Musiknote -->
+  <g transform="translate(512 680)" fill="url(#note)" stroke="#1C4F96" stroke-width="5" stroke-opacity="0.35">
+    <path d="M -40 -110 L 100 -140 L 100 40 A 46 36 -15 1 1 74 8 L 74 -96 L -14 -78 L -14 70
+             A 46 36 -15 1 1 -40 38 Z"/>
+  </g>
+
+  <!-- Register-Reiter A-Z rechts -->
+  <g font-family="Lucida Grande, DejaVu Sans, Helvetica, sans-serif" font-weight="bold" font-size="46" text-anchor="middle">
+    <rect x="726" y="432" width="112" height="64" rx="14" fill="#F4F6F8" stroke="#8C99A8" stroke-width="4"/>
+    <text x="782" y="481" fill="#2D6FC4">A–Z</text>
+  </g>
+</svg>

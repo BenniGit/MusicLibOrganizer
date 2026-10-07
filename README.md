@@ -154,6 +154,11 @@ Die fertige App für Macs mit Apple Silicon (M1–M4) gibt es unter
 Eine neue Version entsteht automatisch, sobald ein Versions-Tag (z. B. `v0.7.0`) gepusht wird.
 Das Test-Werkzeug `musiclib-energie` ist nicht in der App enthalten – dafür weiterhin die Installation unten.
 
+Die Oberfläche ist im Stil von iTunes 5 gehalten (glasiges Aqua-Blau, LCD-Anzeige oben, gestreifte Titelliste;
+`musiclib/theme.py`). Das App-Icon liegt als Vorlage in `packaging/icon.svg`; nach Änderungen
+`python packaging/make_icon.py` (braucht `cairosvg`) ausführen – das erzeugt `musiclib/resources/icon.png`,
+aus dem der Mac-Build mit `packaging/make_icns.sh` das `.icns` für App und DMG baut.
+
 ## Installation (für Entwicklung und das Test-Werkzeug)
 
 Voraussetzungen: Python ≥ 3.10 und [ffmpeg](https://ffmpeg.org/download.html) im `PATH`

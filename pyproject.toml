@@ -31,6 +31,9 @@ musiclib-organizer = "musiclib.gui:main"
 [tool.setuptools]
 packages = ["musiclib"]
 
+[tool.setuptools.package-data]
+musiclib = ["resources/*.png"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = ["live: benötigt Beatport-Zugangsdaten und Netzwerk"]
