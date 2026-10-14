@@ -8,7 +8,6 @@ from typing import Callable, Iterator
 import mutagen
 from mutagen.id3 import ID3
 
-from . import hashtags
 from .models import SUPPORTED_EXTENSIONS, LocalTrack
 
 _MIX_RE = re.compile(r"^(?P<title>.*?)\s*[\(\[](?P<mix>[^\)\]]*(?:mix|edit|remix|dub|version|rework|bootleg|vip|original|extended|instrumental|club|radio)[^\)\]]*)[\)\]]\s*$", re.I)
@@ -128,9 +127,6 @@ def read_track(path: Path) -> LocalTrack:
             track.old, track.raw_tags = _read_id3(tags)
         elif tags is not None:  # Vorbis-Kommentare (FLAC)
             track.old, track.raw_tags = _read_vorbis(tags)
-        comments = [v for k, _label, v in track.raw_tags
-                    if k.split(":", 1)[0] == "COMM" or k.lower() in ("comment", "description")]
-        track.hashtags = hashtags.parse(" ".join(comments))
         track.has_cover = bool(getattr(audio, "pictures", None)) or (
             isinstance(tags, ID3) and bool(tags.getall("APIC")))
         track.artist = track.old.get("artist", "")

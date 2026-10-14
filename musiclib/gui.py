@@ -27,7 +27,7 @@ from .converter import find_ffmpeg
 from .manual import as_unofficial
 from .soundcloud import SoundCloudClient
 from .beatport import BeatportClient
-from .dialogs import CandidateDialog, MetadataDialog, SettingsDialog, TagsDialog, meta_from_local
+from .dialogs import CandidateDialog, MetadataDialog, SettingsDialog, meta_from_local
 from .discogs import DiscogsClient
 from .matcher import enrich, match_item
 from .urlimport import assign_release, load_url, looks_like_url
@@ -38,7 +38,7 @@ from .releases import CONFLICT, harmonize
 from .release_dialog import ReleaseDialog
 from .release_edit import apply_release_edit
 from .scanner import scan
-from .settings import AppSettings, effective_meta, effective_tags, missing_fields
+from .settings import AppSettings, effective_meta, missing_fields, my_tags
 from .tagger import TagOptions
 
 STATUS_COLORS = {
@@ -52,9 +52,9 @@ STATUS_COLORS = {
 MISSING_COLOR = QColor(219, 171, 9, 80)
 
 COLUMNS = ["", "Status", "Quelle", "Datei", "Format", "Lokal erkannt", "Treffer", "Score", "Album-Artist", "Nr.",
-           "Genre", "Label", "Jahr", "BPM", "Key", "Tags", "Cover", "Fehlt", "Ziel"]
+           "Genre", "Label", "Jahr", "BPM", "Key", "Cover", "Fehlt", "Ziel"]
 (COL_CHECK, COL_STATUS, COL_SOURCE, COL_FILE, COL_FMT, COL_LOCAL, COL_MATCH, COL_SCORE, COL_ALBUMARTIST, COL_TRACK,
- COL_GENRE, COL_LABEL, COL_YEAR, COL_BPM, COL_KEY, COL_TAGS, COL_COVER, COL_MISSING, COL_TARGET) = range(len(COLUMNS))
+ COL_GENRE, COL_LABEL, COL_YEAR, COL_BPM, COL_KEY, COL_COVER, COL_MISSING, COL_TARGET) = range(len(COLUMNS))
 
 FILTERS = {
     "Alle": lambda w, i: True,
@@ -203,7 +203,7 @@ class MainWindow(QMainWindow):
         for col, w in ((COL_CHECK, 28), (COL_STATUS, 95), (COL_SOURCE, 75), (COL_FILE, 200), (COL_FMT, 75),
                        (COL_LOCAL, 220), (COL_MATCH, 280), (COL_SCORE, 50), (COL_ALBUMARTIST, 120), (COL_TRACK, 45),
                        (COL_GENRE, 110), (COL_LABEL, 120),
-                       (COL_YEAR, 45), (COL_BPM, 40), (COL_KEY, 45), (COL_TAGS, 140), (COL_COVER, 60), (COL_MISSING, 90)):
+                       (COL_YEAR, 45), (COL_BPM, 40), (COL_KEY, 45), (COL_COVER, 60), (COL_MISSING, 90)):
             self.table.setColumnWidth(col, w)
         self.table.cellDoubleClicked.connect(lambda row, _c: self.choose_match(row))
         self.table.itemChanged.connect(self.on_item_changed)
@@ -461,7 +461,6 @@ class MainWindow(QMainWindow):
             COL_YEAR: meta.year if meta else "",
             COL_BPM: str(meta.bpm or "") if meta else "",
             COL_KEY: key,
-            COL_TAGS: " ".join(f"#{t}" for t in effective_tags(it, self.settings)),
             COL_COVER: self.cover_state(it),
             COL_MISSING: ", ".join(missing),
             COL_TARGET: target,
@@ -571,7 +570,6 @@ class MainWindow(QMainWindow):
             menu.addSeparator()
         menu.addAction("Release / Cover bearbeiten…" + (f" – {len(rows)} Tracks gemeinsam" if len(rows) > 1 else ""),
                        lambda: self.edit_release(rows))
-        menu.addAction("Tags setzen…" + (f" – {len(rows)} Tracks" if len(rows) > 1 else ""), lambda: self.set_tags(rows))
         menu.addAction("Als inoffiziell erfassen (Bootleg/Edit/SoundCloud)" + (f" – {len(rows)} Tracks" if len(rows) > 1 else ""),
                        lambda: self.mark_unofficial(rows))
         menu.addSeparator()
@@ -632,19 +630,6 @@ class MainWindow(QMainWindow):
         if missing:
             text += "\n\nNicht zugeordnet (bitte einzeln per Doppelklick wählen):\n• " + "\n• ".join(missing)
         QMessageBox.information(self, "Von URL übernehmen", text)
-
-    def set_tags(self, rows: list[int]) -> None:
-        items = [self.items[r] for r in rows if self.items[r].status != MatchStatus.DONE]
-        if not items:
-            return
-        current = [list(it.tags if it.tags is not None else it.local.hashtags) for it in items]
-        dlg = TagsDialog(self, self.settings.tag_groups, current)
-        if dlg.exec() != QDialog.Accepted:
-            return
-        add, remove = dlg.picker.changes()
-        for it, tags in zip(items, current):
-            it.tags = [t for t in tags if t not in remove] + [t for t in add if t not in tags]
-        self.refresh_targets()
 
     def mark_unofficial(self, rows: list[int]) -> None:
         """Füllt Album, Tracknummer, Label und Jahr für Tracks ohne offizielles Release vor."""
@@ -723,13 +708,11 @@ class MainWindow(QMainWindow):
             return
         item = self.items[row]
         meta = item.selected or meta_from_local(item.local)
-        current = item.tags if item.tags is not None else item.local.hashtags
-        dlg = MetadataDialog(self, meta, self.settings, item.local, item.keep_tags, current)
+        dlg = MetadataDialog(self, meta, self.settings, item.local, item.keep_tags)
         if dlg.exec() != QDialog.Accepted:
             return
         item.selected = dlg.result_meta()
         item.keep_tags = dlg.result_keep()
-        item.tags = dlg.result_tags()
         item.status = MatchStatus.MANUAL
         item.message = "Metadaten bearbeitet"
         self.refresh_targets()
@@ -1171,7 +1154,7 @@ class MainWindow(QMainWindow):
                 it = self.items[row]
                 w.progress.emit(n, len(rows), it.local.path.name)
                 try:
-                    result = apply_item(it, opts, cover_loader, effective_tags(it, s))
+                    result = apply_item(it, opts, cover_loader, my_tags(it, s))
                     journal.record(it.local.path, it.target)  # für das spätere Umstellen in Rekordbox
                     it.message = result
                     it.enabled = False

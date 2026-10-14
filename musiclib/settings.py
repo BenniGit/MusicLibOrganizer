@@ -4,8 +4,6 @@ from __future__ import annotations
 import json
 from dataclasses import asdict, dataclass, field, fields, replace
 
-from . import hashtags
-from .hashtags import DEFAULT_TAG_GROUPS
 from .models import LibraryItem, TrackMeta, no_label
 
 # Name -> Vorlage. "/" erzeugt Unterordner.
@@ -55,9 +53,7 @@ class AppSettings:
     required_fields: list[str] = field(default_factory=lambda: list(DEFAULT_REQUIRED))
     label_fallback: str = "Self-Released"
     unofficial_label: str = "Bootleg"  # Label für inoffizielle Tracks (SoundCloud, Edits, Bootlegs)
-    tag_groups: dict[str, list[str]] = field(default_factory=lambda: {k: list(v) for k, v in DEFAULT_TAG_GROUPS.items()})
-    auto_tag_unofficial: bool = True  # #bootleg (bzw. Label-Text) für inoffizielle Tracks
-    auto_tag_subgenre: bool = False   # Sub-Genre als #Tag
+    auto_tag_unofficial: bool = True  # inoffizielle Tracks im Kommentar markieren: /* Bootleg */
     match_threshold: float = 0.85
     auto_threshold: float = 1.0
     use_discogs: bool = True
@@ -112,13 +108,10 @@ def missing_fields(meta: TrackMeta | None, settings: AppSettings) -> list[str]:
             if f in REQUIRED_FIELD_CHOICES and not field_value(meta, f).strip()]
 
 
-def effective_tags(item: LibraryItem, settings: AppSettings) -> list[str]:
-    """Eigene Tags + automatische Tags, in der Reihenfolge der Einstellungen."""
-    tags = list(item.tags if item.tags is not None else item.local.hashtags)
+def my_tags(item: LibraryItem, settings: AppSettings) -> list[str]:
+    """Tags für den Kommentar im Rekordbox-My-Tag-Format – z. B. ["Bootleg"] für inoffizielle Tracks."""
     meta = item.selected
-    if meta is not None:
-        if settings.auto_tag_unofficial and settings.unofficial_label and meta.label == settings.unofficial_label:
-            tags.append(hashtags.token(settings.unofficial_label))
-        if settings.auto_tag_subgenre and meta.sub_genre:
-            tags += [hashtags.token(s) for s in meta.sub_genre.split(",")]
-    return hashtags.order([t for t in tags if t], settings.tag_groups)
+    label = settings.unofficial_label.strip()
+    if meta is not None and settings.auto_tag_unofficial and label and meta.label == label:
+        return [label]
+    return []
