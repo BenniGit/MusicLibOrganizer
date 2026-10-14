@@ -20,15 +20,14 @@ Beim Übernehmen werden FLAC/WAV/AIFF per ffmpeg zu **MP3 CBR 320 kbit/s** konve
 Artist, Titel (optional mit Mix), Album-Artist, Release/Album, Tracknummer (z. B. `3/12`), Disc, Label, Genre, BPM, Key, Release-Datum, ISRC, Remixer, Cover sowie als eigene Felder Mix-Name, Katalognummer, Sub-Genre, Quelle und Quellen-ID.
 Album-Artist und Tracknummer kommen aus dem Release (Beatport: eigene Abfrage pro Release, Compilations mit mehr als drei Artists werden zu „Various Artists“).
 
-### Eigene Tags für Rekordbox (#Hashtags im Kommentar)
+### Bootlegs im Kommentar (Format der Rekordbox-My-Tags)
 
-Rekordbox liest „My Tags“ nicht aus Dateien. Deshalb schreibt die App deine eigenen Tags als **#Hashtags in den Kommentar**, z. B. `#peaktime #vocal #bootleg`.
-In Rekordbox: Spalte „Kommentare“ einblenden, nach `#peaktime` suchen oder eine **Intelligente Playlist** mit „Kommentare enthält #peaktime“ anlegen. Bei bereits importierten Tracks nach Änderungen: Rechtsklick → Tag-Informationen neu laden.
-
-- Tags vergeben: im Metadaten-Editor oder per **Rechtsklick → Tags setzen…** (auch für viele Tracks auf einmal).
-- Tag-Liste in den Einstellungen → „Eigene Tags“ (eine Gruppe pro Zeile, z. B. `Situation: Warm-up, Peak Time, Closing`).
-- Automatische Tags: `#bootleg` für inoffizielle Tracks (an), Sub-Genre (aus).
-- Vorhandene #Tags im Kommentar einer Datei werden beim Scannen erkannt und übernommen.
+Inoffizielle Tracks (Label „Bootleg“ bzw. das unter Einstellungen → Tags & Pflichtfelder eingetragene Label)
+bekommen im Kommentar einen Block im Format der Rekordbox-My-Tags: `/* Bootleg */`. Ein vorhandener Kommentar
+bleibt dahinter erhalten, ein vorhandener My-Tag-Block wird ergänzt (`/* Peak Time / Bootleg */`).
+Rekordbox macht daraus keine echten My Tags, der Kommentar ist aber durchsuchbar: Spalte „Kommentare“ einblenden,
+nach `Bootleg` suchen oder eine **Intelligente Playlist** „Kommentare enthält Bootleg“ anlegen.
+Abschaltbar unter Einstellungen → Tags & Pflichtfelder.
 
 ### Vorhandene Tags
 

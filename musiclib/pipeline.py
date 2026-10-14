@@ -62,10 +62,10 @@ class ApplyOptions:
 
 
 def apply_item(item: LibraryItem, opts: ApplyOptions, cover_loader: Callable[[TrackMeta], bytes | None] | None = None,
-               tags: list[str] | None = None) -> str:
+               my_tags: list[str] | None = None) -> str:
     """Verarbeitet einen Eintrag und gibt eine kurze Beschreibung zurück.
 
-    ``tags``: eigene #Tags für den Kommentar (None = Kommentar nicht anfassen).
+    ``my_tags``: Tags für den Kommentar im Rekordbox-Format, z. B. ["Bootleg"] (None/leer = nichts ergänzen).
     """
     src = item.local.path
     dst = item.target
@@ -104,7 +104,7 @@ def apply_item(item: LibraryItem, opts: ApplyOptions, cover_loader: Callable[[Tr
                 cover = None
         cover = cover or old_cover
         tag_opts = replace(opts.tag, embed_cover=True) if item.cover else opts.tag  # eigenes Cover immer einbetten
-        write_tags(dst, meta, tag_opts, cover, keep, tags)
+        write_tags(dst, meta, tag_opts, cover, keep, my_tags)
         actions.append("getaggt")
 
     if opts.move and item.local.needs_conversion and src.exists():

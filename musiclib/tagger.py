@@ -13,7 +13,7 @@ from mutagen.id3 import (
 )
 from mutagen.id3 import delete as delete_id3
 
-from . import hashtags
+from . import mytags
 from .models import TrackMeta
 
 
@@ -88,9 +88,9 @@ def clean_text(value: str) -> str:
 
 
 def write_tags(path: Path, track: TrackMeta, opts: TagOptions, cover: bytes | None = None,
-               keep: list[Frame] | None = None, comment_tags: list[str] | None = None) -> None:
-    """Schreibt die Metadaten. ``comment_tags`` (ohne '#') landen als '#tag #tag' im Kommentar;
-    None lässt Kommentare unverändert."""
+               keep: list[Frame] | None = None, my_tags: list[str] | None = None) -> None:
+    """Schreibt die Metadaten. ``my_tags`` landen im Rekordbox-Format „/* Bootleg */“ vorn im Kommentar;
+    ein vorhandener Kommentar (und ein vorhandener My-Tag-Block) bleibt dabei erhalten."""
     if opts.clean:
         delete_id3(path, delete_v1=True, delete_v2=True)
         try:
@@ -138,14 +138,11 @@ def write_tags(path: Path, track: TrackMeta, opts: TagOptions, cover: bytes | No
     if track.url:
         tags.add(WOAF(url=track.url))
 
-    if comment_tags is not None:
-        # Behaltener Kommentartext bleibt erhalten, alte #Tags werden durch die aktuellen ersetzt
+    if my_tags:
         keep_text = " ".join(" ".join(map(str, f.text)) for f in tags.getall("COMM") if not f.desc)
         for key in [k for k, f in tags.items() if k.startswith("COMM") and not f.desc]:
             del tags[key]
-        text = hashtags.format_comment(comment_tags, keep_text)
-        if text:
-            tags.add(COMM(encoding=3, lang="eng", desc="", text=[text]))
+        tags.add(COMM(encoding=3, lang="eng", desc="", text=[mytags.add(keep_text, my_tags)]))
 
     if opts.embed_cover and cover:
         tags.delall("APIC")
