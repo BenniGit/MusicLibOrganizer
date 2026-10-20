@@ -8,9 +8,11 @@ from musiclib.soundcloud import SoundCloudClient
 
 def reachable(url: str) -> bool:
     try:
-        return requests.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"}).status_code < 500
+        r = requests.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
     except requests.RequestException:
         return False
+    # Bot-Prüfseite (kommt mit HTTP 200): Seite ist für uns praktisch nicht erreichbar
+    return r.status_code < 500 and "/_fs-ch-" not in r.text[:5000]
 
 
 @pytest.mark.live

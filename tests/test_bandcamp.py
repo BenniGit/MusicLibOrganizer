@@ -1,8 +1,10 @@
 import html
 import json
 
+import pytest
+
 from musiclib.bandcamp import (
-    BandcampClient, album_url_of, parse_autocomplete, parse_date, parse_duration, parse_search, parse_track_page,
+    BandcampClient, BandcampError, album_url_of, parse_autocomplete, parse_date, parse_duration, parse_search, parse_track_page,
 )
 
 SEARCH_HTML = """
@@ -211,3 +213,25 @@ def test_more_date_formats():
     assert parse_date("2024-02-16T00:00:00Z") == "2024-02-16"
     assert parse_date("February 16, 2024") == "2024-02-16"
     assert parse_date("16 Feb 2024 00:00:00 UTC") == "2024-02-16"
+
+
+CHALLENGE_HTML = """<!DOCTYPE html><html><head>
+<link href="/_fs-ch-1T1wmsGaOgGaSxcX/assets/styles.css" rel="stylesheet" /></head>
+<body><script>loadScript('/_fs-ch-1T1wmsGaOgGaSxcX/errors.js')</script></body></html>"""
+
+
+class ChallengeSession:
+    def get(self, url, params=None, headers=None, timeout=None):
+        return Resp(CHALLENGE_HTML)
+
+
+def test_bot_challenge_is_reported_instead_of_missing_data():
+    with pytest.raises(BandcampError, match="Bot-Prüfung"):
+        BandcampClient(session=ChallengeSession(), backoff=0).from_url("https://x.bandcamp.com/track/y")
+
+
+def test_no_label_when_publisher_is_one_of_several_artists():
+    t = parse_track_page(track_page(publisher="Johannes Albert", artist="Dompe & Johannes Albert"), "u")
+    assert t.label == ""
+    t = parse_track_page(track_page(publisher="Frank Music", artist="Dompe & Johannes Albert"), "u")
+    assert t.label == "Frank Music"
