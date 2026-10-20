@@ -1190,6 +1190,11 @@ def main() -> int:
         import pyrekordbox.db6.database  # noqa: F401  (im App-Paket enthalten?)
         import sqlcipher3  # noqa: F401
         print("Rekordbox-Datenbankzugriff verfügbar")
+        from . import http
+
+        if http.browser_session() is None:
+            raise SystemExit("curl_cffi fehlt im Paket (Bandcamp würde per Bot-Prüfung blockiert)")
+        print("Browser-TLS für Bandcamp verfügbar")
         if theme.app_icon().isNull():
             raise SystemExit("App-Icon fehlt im Paket (musiclib/resources/icon.png)")
         print("App-Icon geladen")

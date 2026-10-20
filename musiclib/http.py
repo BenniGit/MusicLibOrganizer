@@ -6,6 +6,17 @@ import time
 
 import requests
 
+try:  # TLS wie ein Browser – Bandcamp blockt je nach Python/OpenSSL-Version den Fingerabdruck von requests
+    from curl_cffi import requests as browser_requests
+except ImportError:  # pragma: no cover
+    browser_requests = None
+
+CONNECTION_ERRORS: tuple = (requests.ConnectionError, requests.Timeout)
+REQUEST_ERRORS: tuple = (requests.RequestException,)
+if browser_requests is not None:
+    CONNECTION_ERRORS += (browser_requests.exceptions.ConnectionError, browser_requests.exceptions.Timeout)
+    REQUEST_ERRORS += (browser_requests.exceptions.RequestException,)
+
 RETRY_STATUS = {500, 502, 503, 504, 520, 521, 522, 524}
 STATUS_TEXT = {
     401: "Zugang abgelehnt",
@@ -35,7 +46,7 @@ def request(session: requests.Session, method: str, url: str, retries: int = 3, 
     for attempt in range(retries + 1):
         try:
             r = getattr(session, method.lower())(url, **kwargs)
-        except (requests.ConnectionError, requests.Timeout) as e:
+        except CONNECTION_ERRORS as e:
             last_exc = e
         else:
             if r.status_code not in RETRY_STATUS and r.status_code != 429:
@@ -52,6 +63,11 @@ def request(session: requests.Session, method: str, url: str, retries: int = 3, 
             raise last_exc  # type: ignore[misc]
         time.sleep(backoff * 2 ** attempt)
     raise RuntimeError("unreachable")
+
+
+def browser_session():
+    """Session mit dem TLS-Fingerabdruck von Chrome (None, wenn curl_cffi fehlt)."""
+    return browser_requests.Session(impersonate="chrome") if browser_requests is not None else None
 
 
 class SourceDown(RuntimeError):
