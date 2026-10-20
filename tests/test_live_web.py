@@ -2,14 +2,16 @@
 import pytest
 import requests
 
+from musiclib import http
 from musiclib.bandcamp import BandcampClient
 from musiclib.soundcloud import SoundCloudClient
 
 
 def reachable(url: str) -> bool:
     try:
-        r = requests.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
-    except requests.RequestException:
+        # Wie die Clients: mit Browser-TLS, sonst blockt Bandcamp je nach Python/OpenSSL-Version
+        r = (http.browser_session() or requests.Session()).get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
+    except http.REQUEST_ERRORS:
         return False
     # Bot-Prüfseite (kommt mit HTTP 200): Seite ist für uns praktisch nicht erreichbar
     return r.status_code < 500 and "/_fs-ch-" not in r.text[:5000]

@@ -276,6 +276,12 @@ class BandcampClient:
 
     def __init__(self, session: requests.Session | None = None, timeout: float = 30, max_results: int = 3,
                  backoff: float = 1.0):
+        self.headers = HEADERS
+        if session is None:
+            session = http.browser_session()
+            if session is not None:
+                # Bringt die zum Fingerabdruck passenden Browser-Header mit – ein eigener User-Agent würde stören
+                self.headers = {"Accept-Language": HEADERS["Accept-Language"]}
         self.session = session or requests.Session()
         self.timeout = timeout
         self.max_results = max_results
@@ -289,9 +295,9 @@ class BandcampClient:
         except http.SourceDown as e:
             raise BandcampError(str(e)) from e
         try:
-            r = http.request(self.session, method, url, headers=HEADERS, timeout=self.timeout,
+            r = http.request(self.session, method, url, headers=self.headers, timeout=self.timeout,
                              backoff=self.backoff, **kwargs)
-        except requests.RequestException as e:
+        except http.REQUEST_ERRORS as e:
             self.breaker.failure()
             raise BandcampError(f"nicht erreichbar ({type(e).__name__})") from e
         if r.status_code in http.RETRY_STATUS:
@@ -392,7 +398,7 @@ class BandcampClient:
         if not url:
             return None
         try:
-            r = self.session.get(url, headers=HEADERS, timeout=self.timeout)
-        except requests.RequestException:
+            r = self.session.get(url, headers=self.headers, timeout=self.timeout)
+        except http.REQUEST_ERRORS:
             return None
         return r.content if r.status_code == 200 else None
