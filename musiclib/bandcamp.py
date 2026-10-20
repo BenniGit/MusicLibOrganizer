@@ -33,6 +33,10 @@ _LDJSON_RE = re.compile(r'<script type="application/ld\+json"[^>]*>(.*?)</script
 _DURATION_RE = re.compile(r"P(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?")
 # Seitendaten, die Bandcamps eigenes Skript nutzt (HTML-escaptes JSON im Attribut data-tralbum)
 _TRALBUM_RE = re.compile(r'data-tralbum="([^"]*)"')
+# Bot-Prüfung statt der eigentlichen Seite (kommt mit HTTP 200, lädt nur ein Prüfskript nach)
+_CHALLENGE_RE = re.compile(r"/_fs-ch-[\w-]+/")
+# Mehrere Artists in einem Namen: „Dompe & Johannes Albert“, „A, B and C“
+_ARTIST_SPLIT_RE = re.compile(r"\s*(?:,|&|\+|\band\b|\bx\b|\bfeat\.?|\bft\.?)\s*", re.I)
 # Sichtbarer Text unter der Trackliste: „released February 16, 2024“
 _RELEASED_RE = re.compile(r"released\s+([A-Z][a-z]+\s+\d{1,2},\s+\d{4})")
 
@@ -157,8 +161,9 @@ def _ld_blocks(page: str) -> list[dict]:
 
 
 def _label_for(artist: str, publisher: str) -> str:
-    # Veröffentlicht der Artist selbst, gibt es kein Label
-    return "" if not publisher or publisher.lower() == artist.lower() else publisher
+    # Veröffentlicht der Artist (oder einer der beteiligten Artists) selbst, gibt es kein Label
+    names = {artist.lower(), *(a.lower() for a in _ARTIST_SPLIT_RE.split(artist) if a)}
+    return "" if not publisher or publisher.lower() in names else publisher
 
 
 def _keywords(data: dict) -> list[str]:
@@ -212,9 +217,7 @@ def parse_track_page(page: str, url: str) -> TrackMeta | None:
         if data.get("@type") != "MusicRecording":
             continue
         artist = _name(data.get("byArtist"))
-        publisher = _name(data.get("publisher"))
-        # Veröffentlicht der Artist selbst, gibt es kein Label
-        label = "" if not publisher or publisher.lower() == artist.lower() else publisher
+        label = _label_for(artist, _name(data.get("publisher")))
         keywords = data.get("keywords") or []
         if isinstance(keywords, str):
             keywords = [k.strip() for k in keywords.split(",")]
@@ -297,6 +300,9 @@ class BandcampClient:
             self.breaker.success()
         if r.status_code != 200:
             raise BandcampError(http.describe(r.status_code, r.text))
+        if _CHALLENGE_RE.search(r.text[:5000]):
+            raise BandcampError("Bandcamp hat statt der Seite eine Bot-Prüfung geschickt – "
+                                "bitte später erneut versuchen")
         return r
 
     def _find(self, query: str) -> list[dict]:
